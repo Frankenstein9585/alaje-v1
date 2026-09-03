@@ -1,0 +1,15 @@
+# Normalize to LF in the repository; Git decides the working-copy ending.
+* text=auto eol=lf
+
+# Lockfiles and generated SQL are LF regardless of platform.
+package-lock.json text eol=lf
+*.sql text eol=lf
+
+# Never touch binary content.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
