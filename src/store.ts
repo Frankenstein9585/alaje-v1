@@ -23,6 +23,8 @@ export interface ProductRecord {
   name: string;
   normalizedName: string;
   unit: string | null;
+  /** DECIMAL string, or null when the owner has never said. */
+  costPrice: string | null;
   stockQty: number;
   lowStockThreshold: number;
 }
@@ -45,6 +47,8 @@ export interface TransactionRecord {
   productRef: string | null;
   customerId: string | null;
   quantity: number | null;
+  /** Cost of goods for this sale, snapshotted. Null when cost was unknown. */
+  costAmount: string | null;
   groupId: string | null;
   source: 'typed' | 'ocr';
   voidedAt: Date | null;
@@ -54,6 +58,7 @@ export interface TransactionRecord {
 export interface NewProduct {
   name: string;
   unit?: string | null;
+  costPrice?: string | null;
   stockQty?: number;
   lowStockThreshold?: number;
 }
@@ -64,6 +69,7 @@ export interface NewTransaction {
   productRef?: string | null;
   customerId?: string | null;
   quantity?: number | null;
+  costAmount?: string | null;
   groupId?: string | null;
   source?: 'typed' | 'ocr';
 }
@@ -113,6 +119,8 @@ export interface Store {
    * arrive concurrently and a lost update silently corrupts the count.
    */
   adjustStock(businessId: string, productId: string, delta: number): Promise<ProductRecord | null>;
+  /** Set what one unit costs the shop. */
+  setProductCost(businessId: string, productId: string, costPrice: string): Promise<ProductRecord | null>;
 
   // --- customers ---
 

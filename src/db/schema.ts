@@ -55,6 +55,12 @@ export const products = mysqlTable(
     normalizedName: varchar('normalized_name', { length: 160 }).notNull(),
     /** "carton", "bag", "crate". Null until the owner uses one. */
     unit: varchar('unit', { length: 32 }),
+    /**
+     * What one unit costs the shop. Null until the owner says, and null is a
+     * real answer: without it we know revenue but not profit, and guessing
+     * would be worse than saying so.
+     */
+    costPrice: decimal('cost_price', { precision: 14, scale: 2 }),
     stockQty: int('stock_qty').notNull().default(0),
     lowStockThreshold: int('low_stock_threshold').notNull().default(0),
     createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -104,6 +110,12 @@ export const transactions = mysqlTable(
     productRef: varchar('product_ref', { length: 36 }),
     customerId: varchar('customer_id', { length: 36 }),
     quantity: int('quantity'),
+    /**
+     * What this sale's goods cost, captured when the sale happens rather than
+     * read back from the product later. Restocking at a new price must not
+     * silently rewrite last month's profit.
+     */
+    costAmount: decimal('cost_amount', { precision: 14, scale: 2 }),
     /**
      * Rows written from one thing the owner said share a group id. A sale paid
      * for up front is a sale plus a payment; undoing it must void both, or the

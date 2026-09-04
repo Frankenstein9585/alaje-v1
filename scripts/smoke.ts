@@ -36,12 +36,12 @@ const business: BusinessRecord = {
  */
 const script: Array<{ say: string; expect: string }> = [
   { say: 'oya my shop na Mama Chika Ventures not Stores', expect: 'rename_business' },
-  { say: 'i got 20 cartons of indomie', expect: 'add_stock' },
+  { say: 'i got 20 cartons of indomie, i bought am for 12k each', expect: 'add_stock (unit_cost 12000)' },
   { say: 'sold 3 to chika for 42k', expect: 'record_sale (customer Chika, amount 42000)' },
   { say: 'how much indomie remain?', expect: 'check_stock' },
   { say: 'chika don pay 20k', expect: 'record_payment (20000)' },
   { say: 'who dey owe me?', expect: 'check_balance' },
-  { say: 'wetin i make today?', expect: 'run_report (today)' },
+  { say: 'wetin i make today?', expect: 'run_report (today, real profit)' },
   { say: 'send chika her invoice', expect: 'send_invoice' },
   // Two phrasings: one unambiguous, one where "no" could read as a refusal.
   // A model that only handles the tidy one will disappoint a real owner.

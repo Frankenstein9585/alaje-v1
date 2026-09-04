@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { formatNaira, formatQuantity } from '../../format.js';
+import { koboToDecimal, toKobo } from '../../money.js';
 import type { ProductRecord } from '../../store.js';
 import { describeBalance, findOrCreateCustomer } from './customers.js';
 import type { ToolContext, ToolDefinition } from './registry.js';
@@ -41,6 +42,7 @@ function summarize(product: ProductRecord) {
     stock: product.stockQty,
     stock_display: stockDisplay(product),
     unit: product.unit,
+    unit_cost: product.costPrice,
     low_stock: isLow(product),
     low_stock_threshold: product.lowStockThreshold,
   };
@@ -50,7 +52,7 @@ function summarize(product: ProductRecord) {
 async function findOrCreate(
   ctx: ToolContext,
   name: string,
-  defaults: { unit?: string | null; lowStockThreshold?: number } = {},
+  defaults: { unit?: string | null; lowStockThreshold?: number; costPrice?: string | null } = {},
 ): Promise<{ product: ProductRecord; created: boolean }> {
   const existing = await ctx.store.findProductByName(ctx.business.id, name);
   if (existing) return { product: existing, created: false };
@@ -58,6 +60,7 @@ async function findOrCreate(
   const product = await ctx.store.createProduct(ctx.business.id, {
     name,
     unit: defaults.unit ?? null,
+    costPrice: defaults.costPrice ?? null,
     stockQty: 0,
     lowStockThreshold: defaults.lowStockThreshold ?? 0,
   });
@@ -80,6 +83,12 @@ const addStockArgs = z.object({
     .max(1_000_000)
     .optional()
     .describe('Warn the owner when stock falls to this level or below'),
+  unit_cost: z
+    .number()
+    .positive()
+    .max(1_000_000_000)
+    .optional()
+    .describe('What ONE unit cost the shop to buy, in naira. Only if the owner says.'),
 });
 
 export const addStockTool: ToolDefinition<z.infer<typeof addStockArgs>> = {
@@ -91,7 +100,14 @@ export const addStockTool: ToolDefinition<z.infer<typeof addStockArgs>> = {
     const { product, created } = await findOrCreate(ctx, args.product, {
       unit: args.unit ?? null,
       lowStockThreshold: args.low_stock_threshold ?? 0,
+      costPrice: args.unit_cost === undefined ? null : args.unit_cost.toFixed(2),
     });
+
+    // Restocking at a new price updates the cost going forward. Sales already
+    // recorded keep the cost they were sold at.
+    if (args.unit_cost !== undefined && !created) {
+      await ctx.store.setProductCost(ctx.business.id, product.id, args.unit_cost.toFixed(2));
+    }
 
     const updated = (await ctx.store.adjustStock(ctx.business.id, product.id, args.quantity)) ?? product;
 
@@ -186,6 +202,10 @@ export const recordSaleTool: ToolDefinition<z.infer<typeof recordSaleArgs>> = {
     const customer = args.customer ? await findOrCreateCustomer(ctx, args.customer) : null;
 
     const amount = args.amount.toFixed(2);
+    // Snapshot the cost of goods now. Reading it back from the product at
+    // report time would let a later restock rewrite past profit.
+    const costAmount =
+      product.costPrice === null ? null : koboToDecimal(toKobo(product.costPrice) * args.quantity);
     // One group per thing the owner said, so undoing reverses all of it.
     const groupId = randomUUID();
     const transaction = await ctx.store.createTransaction(ctx.business.id, {
@@ -194,6 +214,7 @@ export const recordSaleTool: ToolDefinition<z.infer<typeof recordSaleArgs>> = {
       productRef: product.id,
       quantity: args.quantity,
       customerId: customer?.customer.id ?? null,
+      costAmount,
       groupId,
     });
 

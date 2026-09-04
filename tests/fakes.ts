@@ -80,6 +80,7 @@ export class InMemoryStore implements Store {
       name: product.name.trim(),
       normalizedName: normalizeProductName(product.name),
       unit: product.unit ?? null,
+      costPrice: product.costPrice ?? null,
       stockQty: product.stockQty ?? 0,
       lowStockThreshold: product.lowStockThreshold ?? 0,
     };
@@ -95,6 +96,17 @@ export class InMemoryStore implements Store {
     const row = this.products.find((p) => p.id === productId && p.businessId === businessId);
     if (!row) return null;
     row.stockQty += delta;
+    return row;
+  }
+
+  async setProductCost(
+    businessId: string,
+    productId: string,
+    costPrice: string,
+  ): Promise<ProductRecord | null> {
+    const row = this.products.find((p) => p.id === productId && p.businessId === businessId);
+    if (!row) return null;
+    row.costPrice = costPrice;
     return row;
   }
 
@@ -156,6 +168,7 @@ export class InMemoryStore implements Store {
       productRef: tx.productRef ?? null,
       customerId: tx.customerId ?? null,
       quantity: tx.quantity ?? null,
+      costAmount: tx.costAmount ?? null,
       groupId: tx.groupId ?? null,
       source: tx.source ?? 'typed',
       voidedAt: null,

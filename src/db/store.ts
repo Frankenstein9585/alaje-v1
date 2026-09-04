@@ -125,6 +125,7 @@ export class DrizzleStore implements Store {
       name: product.name.trim(),
       normalizedName: normalizeProductName(product.name),
       unit: product.unit ?? null,
+      costPrice: product.costPrice ?? null,
       stockQty: product.stockQty ?? 0,
       lowStockThreshold: product.lowStockThreshold ?? 0,
     };
@@ -234,6 +235,24 @@ export class DrizzleStore implements Store {
     }));
   }
 
+  async setProductCost(
+    businessId: string,
+    productId: string,
+    costPrice: string,
+  ): Promise<ProductRecord | null> {
+    await this.db
+      .update(products)
+      .set({ costPrice })
+      .where(and(eq(products.id, productId), eq(products.businessId, businessId)));
+
+    const rows = await this.db
+      .select()
+      .from(products)
+      .where(and(eq(products.id, productId), eq(products.businessId, businessId)))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async createTransaction(businessId: string, tx: NewTransaction): Promise<TransactionRecord> {
     const row: TransactionRecord = {
       id: randomUUID(),
@@ -243,6 +262,7 @@ export class DrizzleStore implements Store {
       productRef: tx.productRef ?? null,
       customerId: tx.customerId ?? null,
       quantity: tx.quantity ?? null,
+      costAmount: tx.costAmount ?? null,
       groupId: tx.groupId ?? null,
       source: tx.source ?? 'typed',
       voidedAt: null,

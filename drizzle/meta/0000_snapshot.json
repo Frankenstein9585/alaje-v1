@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "771f9ab0-df25-405f-b7d7-e2a366c6b3b6",
+  "id": "07b1984d-189e-4606-a5f0-6097cc580c6b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "businesses": {
@@ -274,6 +274,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "cost_price": {
+          "name": "cost_price",
+          "type": "decimal(14,2)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "stock_qty": {
           "name": "stock_qty",
           "type": "int",
@@ -452,6 +459,13 @@
         "quantity": {
           "name": "quantity",
           "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cost_amount": {
+          "name": "cost_amount",
+          "type": "decimal(14,2)",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

@@ -3,6 +3,7 @@ import { checkBalanceTool, recordPaymentTool } from '../src/agent/tools/customer
 import { sendInvoiceTool } from '../src/agent/tools/invoice.js';
 import { executeTool, type ToolContext } from '../src/agent/tools/registry.js';
 import { runReportTool } from '../src/agent/tools/report.js';
+import { setCostPriceTool } from '../src/agent/tools/cost.js';
 import { addStockTool, recordSaleTool } from '../src/agent/tools/stock.js';
 import { undoLastTool } from '../src/agent/tools/undo.js';
 import { periodRange } from '../src/period.js';
@@ -24,6 +25,7 @@ const tools = [
   undoLastTool,
   runReportTool,
   sendInvoiceTool,
+  setCostPriceTool,
 ];
 
 describe('periodRange', () => {
@@ -78,13 +80,67 @@ describe('run_report and send_invoice', () => {
       expect(display(out)).toBe('Today: nothing recorded yet.');
     });
 
-    it('sums sales for the period', async () => {
+    it('sums sales, and says plainly that it cannot work out profit', async () => {
+      // No cost price has been given, so profit is unknowable. Naming the gap
+      // beats quoting a number that only counts some of the costs.
       await call('record_sale', { product: 'Indomie', quantity: 3, amount: 42000 });
       await call('record_sale', { product: 'Indomie', quantity: 1, amount: 8000 });
 
       const out = await call('run_report', { period: 'today' });
-      expect(display(out)).toBe('Today:\nSales: ₦50,000 from 2 sales');
-      expect(out.value).toMatchObject({ revenue: '50000.00', sale_count: 2 });
+      expect(display(out)).toContain('Sales: ₦50,000 from 2 sales');
+      expect(display(out)).toContain("I don't know what you paid for Indomie");
+      expect(out.value).toMatchObject({ revenue: '50000.00', sale_count: 2, profit: null });
+    });
+
+    it('reports real profit once the cost is known', async () => {
+      await call('add_stock', { product: 'Milo', quantity: 10, unit: 'tin', unit_cost: 1500 });
+      await call('record_sale', { product: 'Milo', quantity: 4, amount: 8000 });
+
+      const out = await call('run_report', { period: 'today' });
+      // 8,000 revenue less 4 x 1,500 cost.
+      expect(display(out)).toContain('Cost of goods: ₦6,000');
+      expect(display(out)).toContain('Profit: ₦2,000');
+      expect(out.value).toMatchObject({ profit: '2000.00' });
+    });
+
+    it('withholds profit when only some sales have a known cost', async () => {
+      await call('add_stock', { product: 'Milo', quantity: 10, unit: 'tin', unit_cost: 1500 });
+      await call('record_sale', { product: 'Milo', quantity: 4, amount: 8000 });
+      await call('record_sale', { product: 'Indomie', quantity: 1, amount: 9000 });
+
+      const out = await call('run_report', { period: 'today' });
+      expect(out.value).toMatchObject({ profit: null, products_missing_cost: 1 });
+      expect(display(out)).toContain('Indomie');
+      expect(display(out)).not.toContain('Profit:');
+    });
+
+    it('does not let a later restock rewrite past profit', async () => {
+      // The cost is snapshotted onto the sale. Buying the next batch dearer
+      // must not retroactively shrink a margin the owner already earned.
+      await call('add_stock', { product: 'Milo', quantity: 10, unit: 'tin', unit_cost: 1000 });
+      await call('record_sale', { product: 'Milo', quantity: 2, amount: 4000 });
+
+      await call('add_stock', { product: 'Milo', quantity: 10, unit_cost: 1800 });
+
+      const out = await call('run_report', { period: 'today' });
+      expect(out.value).toMatchObject({ cost_of_goods: '2000.00', profit: '2000.00' });
+    });
+
+    it('picks up a cost given after the fact, for sales from then on', async () => {
+      await call('add_stock', { product: 'Milo', quantity: 10, unit: 'tin' });
+      const set = await call('set_cost_price', { product: 'Milo', unit_cost: 1500 });
+      expect(display(set)).toContain('costs you ₦1,500 per tin');
+
+      await call('record_sale', { product: 'Milo', quantity: 2, amount: 5000 });
+
+      const out = await call('run_report', { period: 'today' });
+      expect(out.value).toMatchObject({ profit: '2000.00' });
+    });
+
+    it('will not set a cost for a product it has never seen', async () => {
+      const out = await call('set_cost_price', { product: 'Garri', unit_cost: 900 });
+      expect(out.isError).toBe(false);
+      expect(display(out)).toContain('No record of Garri yet');
     });
 
     it('excludes a voided sale from the numbers', async () => {
