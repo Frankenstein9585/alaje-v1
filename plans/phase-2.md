@@ -16,7 +16,10 @@ this plan, the divergence and its reason are noted inline rather than edited out
 | 8. Tests | Built, 97 passing |
 | 9. Build order | Followed, with customers inserted after step 7 |
 
-**Not built:** `run_report`, in-chat invoice.
+**Not built:** nothing from the agreed scope. `run_report` and invoicing shipped,
+along with cost price, `undo_last` and `rename_business`.
+
+**Known limitation:** one business, one phone number. See section 13.
 
 **Never run:** no live model call, no applied migration, no real WhatsApp
 message. Every test uses a scripted LLM client and an in-memory store.
@@ -556,3 +559,50 @@ Landing page, where the build will not catch up in time:
 Still deliberately out of scope: proactive alerts and any scheduler, PDF export,
 the media pipeline for voice and OCR, and multi-step confirmation before a
 complete record is written.
+
+## 13. Known limitation: one business, one phone number
+
+Recorded here rather than fixed, because fixing it is a data-model change and
+nothing in the current scope needs it.
+
+Today a phone number **is** a business. `resolveBusiness` maps a number to a
+`business_id`, and `businesses.whatsapp_number` carries a unique index. An owner
+and a shop assistant messaging from two handsets therefore become two separate
+businesses, with separate stock, separate customers and separate books. Neither
+can see the other's numbers, and nothing warns them.
+
+For a single-owner shop, which is the whole MVP audience, this is invisible. It
+stops being invisible the moment either of these arrives:
+
+- **A second person needs access.** Most obvious with an assistant who records
+  sales while the owner is out.
+- **A web dashboard.** Browser access needs an identity that is not "Meta
+  delivered this message", and the natural login is a code sent to the owner's
+  WhatsApp thread. That immediately raises "which numbers may log in to this
+  business", which is the same question.
+
+### The change, when it comes
+
+Split identity from the business:
+
+```
+businesses          (id, name, created_at)
+business_numbers    (id, business_id, whatsapp_number, role, created_at)
+```
+
+`resolveBusiness` looks up `business_numbers` and returns the owning business.
+Everything downstream is unchanged, because every table is already scoped by
+`business_id` rather than by phone number, and no tool has ever taken a number
+as an argument. That is the part worth protecting: the current shortcut is
+confined to one function, so this stays a small migration rather than a rewrite.
+
+Do it as one migration that backfills a `business_numbers` row per existing
+business, then drops `businesses.whatsapp_number`.
+
+### Not the same thing as a conversations table
+
+Section 3.2 discusses a `conversations` entity and concludes it earns nothing
+while business and conversation are 1:1. This is the change that would break
+that assumption: two numbers on one business means two threads, and the
+transcript and any per-thread state would key on the number, not the business.
+Revisit that section at the same time, not before.
