@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "a1e7fead-7e7f-4e1f-9034-12489c807c06",
+  "id": "771f9ab0-df25-405f-b7d7-e2a366c6b3b6",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "businesses": {
@@ -407,6 +407,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
         "business_id": {
           "name": "business_id",
           "type": "varchar(36)",
@@ -449,6 +456,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "group_id": {
+          "name": "group_id",
+          "type": "varchar(36)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "source": {
           "name": "source",
           "type": "enum('typed','ocr')",
@@ -487,6 +501,21 @@
           "columns": [
             "business_id",
             "customer_id"
+          ],
+          "isUnique": false
+        },
+        "transactions_seq_idx": {
+          "name": "transactions_seq_idx",
+          "columns": [
+            "seq"
+          ],
+          "isUnique": true
+        },
+        "transactions_business_seq_idx": {
+          "name": "transactions_business_seq_idx",
+          "columns": [
+            "business_id",
+            "seq"
           ],
           "isUnique": false
         }

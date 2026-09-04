@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { normalizeProductName } from '../format.js';
+import { koboToDecimal } from '../money.js';
 import type {
   BusinessRecord,
   ConversationTurn,
+  CustomerRecord,
   NewProduct,
   NewTransaction,
   ProductRecord,
@@ -12,10 +14,29 @@ import type {
   TransactionRecord,
 } from '../store.js';
 import type { Db } from './client.js';
-import { businesses, messages, processedMessages, products, toolCallLogs, transactions } from './schema.js';
+import {
+  businesses,
+  customers,
+  messages,
+  processedMessages,
+  products,
+  toolCallLogs,
+  transactions,
+} from './schema.js';
 import { inArray } from 'drizzle-orm';
 
 const ER_DUP_ENTRY = 'ER_DUP_ENTRY';
+
+/** A sale adds to what a customer owes; a payment reduces it. */
+const BALANCE_SUM = sql<string>`COALESCE(SUM(CASE ${transactions.type}
+  WHEN 'sale' THEN ${transactions.amount}
+  WHEN 'payment' THEN -${transactions.amount}
+  ELSE 0 END), 0)`;
+
+function normalizeBalance(raw: unknown): string {
+  if (raw === null || raw === undefined) return '0.00';
+  return koboToDecimal(Math.round(Number(raw) * 100));
+}
 
 function isDuplicateKeyError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: string }).code === ER_DUP_ENTRY;
@@ -132,6 +153,87 @@ export class DrizzleStore implements Store {
     return rows[0] ?? null;
   }
 
+  async findCustomerByName(businessId: string, name: string): Promise<CustomerRecord | null> {
+    const rows = await this.db
+      .select()
+      .from(customers)
+      .where(
+        and(
+          eq(customers.businessId, businessId),
+          eq(customers.normalizedName, normalizeProductName(name)),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  async listCustomers(businessId: string): Promise<CustomerRecord[]> {
+    return this.db
+      .select()
+      .from(customers)
+      .where(eq(customers.businessId, businessId))
+      .orderBy(customers.name);
+  }
+
+  async createCustomer(businessId: string, name: string): Promise<CustomerRecord> {
+    const row: CustomerRecord = {
+      id: randomUUID(),
+      businessId,
+      name: name.trim(),
+      normalizedName: normalizeProductName(name),
+    };
+    await this.db.insert(customers).values(row);
+    return row;
+  }
+
+  /**
+   * Summed in SQL over DECIMAL so the arithmetic never becomes a float, and
+   * derived from transactions rather than a stored column: a running balance
+   * and a voided transaction drift apart the moment anyone corrects anything.
+   */
+  async customerBalance(businessId: string, customerId: string): Promise<string> {
+    const rows = await this.db
+      .select({ balance: BALANCE_SUM })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.businessId, businessId),
+          eq(transactions.customerId, customerId),
+          isNull(transactions.voidedAt),
+        ),
+      );
+    return normalizeBalance(rows[0]?.balance);
+  }
+
+  async outstandingBalances(
+    businessId: string,
+  ): Promise<Array<{ customer: CustomerRecord; balance: string }>> {
+    const rows = await this.db
+      .select({
+        id: customers.id,
+        businessId: customers.businessId,
+        name: customers.name,
+        normalizedName: customers.normalizedName,
+        balance: BALANCE_SUM,
+      })
+      .from(transactions)
+      .innerJoin(customers, eq(customers.id, transactions.customerId))
+      .where(and(eq(transactions.businessId, businessId), isNull(transactions.voidedAt)))
+      .groupBy(customers.id, customers.businessId, customers.name, customers.normalizedName)
+      .having(sql`${BALANCE_SUM} <> 0`)
+      .orderBy(desc(BALANCE_SUM));
+
+    return rows.map((r) => ({
+      customer: {
+        id: r.id,
+        businessId: r.businessId,
+        name: r.name,
+        normalizedName: r.normalizedName,
+      },
+      balance: normalizeBalance(r.balance),
+    }));
+  }
+
   async createTransaction(businessId: string, tx: NewTransaction): Promise<TransactionRecord> {
     const row: TransactionRecord = {
       id: randomUUID(),
@@ -141,10 +243,12 @@ export class DrizzleStore implements Store {
       productRef: tx.productRef ?? null,
       customerId: tx.customerId ?? null,
       quantity: tx.quantity ?? null,
+      groupId: tx.groupId ?? null,
       source: tx.source ?? 'typed',
       voidedAt: null,
       createdAt: new Date(),
     };
+    // seq is assigned by the database.
     await this.db.insert(transactions).values(row);
     return row;
   }
@@ -154,7 +258,8 @@ export class DrizzleStore implements Store {
       .select()
       .from(transactions)
       .where(and(eq(transactions.businessId, businessId), isNull(transactions.voidedAt)))
-      .orderBy(desc(transactions.createdAt))
+      // seq, not created_at: same-second entries must still order correctly.
+      .orderBy(desc(transactions.seq))
       .limit(limit);
   }
 
@@ -183,6 +288,35 @@ export class DrizzleStore implements Store {
       .set({ voidedAt })
       .where(and(eq(transactions.id, transactionId), eq(transactions.businessId, businessId)));
     return { ...row, voidedAt };
+  }
+
+  async voidLastEntry(businessId: string): Promise<TransactionRecord[]> {
+    const [latest] = await this.listRecentTransactions(businessId, 1);
+    if (!latest) return [];
+
+    // Void the whole group, not just the newest row: a sale paid up front is a
+    // sale plus a payment, and voiding one of them leaves a phantom debt.
+    const siblings = latest.groupId
+      ? await this.db
+          .select()
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.businessId, businessId),
+              eq(transactions.groupId, latest.groupId),
+              isNull(transactions.voidedAt),
+            ),
+          )
+      : [latest];
+
+    const voidedAt = new Date();
+    for (const row of siblings) {
+      await this.db
+        .update(transactions)
+        .set({ voidedAt })
+        .where(and(eq(transactions.id, row.id), eq(transactions.businessId, businessId)));
+    }
+    return siblings.map((row) => ({ ...row, voidedAt }));
   }
 
   async appendMessage(businessId: string, turn: ConversationTurn): Promise<void> {

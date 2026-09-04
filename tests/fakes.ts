@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import pino from 'pino';
 import { normalizeProductName } from '../src/format.js';
+import { sumDecimals, toKobo } from '../src/money.js';
 import type {
   BusinessRecord,
   ConversationTurn,
+  CustomerRecord,
   NewProduct,
   NewTransaction,
   ProductRecord,
@@ -21,6 +23,7 @@ export class InMemoryStore implements Store {
   readonly toolCalls: ToolCallLogEntry[] = [];
   readonly products: ProductRecord[] = [];
   readonly transactions: TransactionRecord[] = [];
+  readonly customers: CustomerRecord[] = [];
   readonly messages: Array<{ businessId: string; turn: ConversationTurn }> = [];
   private readonly claimed = new Set<string>();
 
@@ -95,6 +98,53 @@ export class InMemoryStore implements Store {
     return row;
   }
 
+  // --- customers ---
+
+  async findCustomerByName(businessId: string, name: string): Promise<CustomerRecord | null> {
+    const normalized = normalizeProductName(name);
+    return (
+      this.customers.find((c) => c.businessId === businessId && c.normalizedName === normalized) ??
+      null
+    );
+  }
+
+  async listCustomers(businessId: string): Promise<CustomerRecord[]> {
+    return this.customers
+      .filter((c) => c.businessId === businessId)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async createCustomer(businessId: string, name: string): Promise<CustomerRecord> {
+    const row: CustomerRecord = {
+      id: randomUUID(),
+      businessId,
+      name: name.trim(),
+      normalizedName: normalizeProductName(name),
+    };
+    this.customers.push(row);
+    return row;
+  }
+
+  async customerBalance(businessId: string, customerId: string): Promise<string> {
+    const signed = this.transactions
+      .filter(
+        (t) => t.businessId === businessId && t.customerId === customerId && t.voidedAt === null,
+      )
+      .map((t) => (t.type === 'payment' ? -toKobo(t.amount) / 100 : t.type === 'sale' ? Number(t.amount) : 0));
+    return sumDecimals(signed);
+  }
+
+  async outstandingBalances(
+    businessId: string,
+  ): Promise<Array<{ customer: CustomerRecord; balance: string }>> {
+    const out: Array<{ customer: CustomerRecord; balance: string }> = [];
+    for (const customer of await this.listCustomers(businessId)) {
+      const balance = await this.customerBalance(businessId, customer.id);
+      if (toKobo(balance) !== 0) out.push({ customer, balance });
+    }
+    return out.sort((a, b) => toKobo(b.balance) - toKobo(a.balance));
+  }
+
   // --- transactions ---
 
   async createTransaction(businessId: string, tx: NewTransaction): Promise<TransactionRecord> {
@@ -106,6 +156,7 @@ export class InMemoryStore implements Store {
       productRef: tx.productRef ?? null,
       customerId: tx.customerId ?? null,
       quantity: tx.quantity ?? null,
+      groupId: tx.groupId ?? null,
       source: tx.source ?? 'typed',
       voidedAt: null,
       createdAt: new Date(),
@@ -115,9 +166,13 @@ export class InMemoryStore implements Store {
   }
 
   async listRecentTransactions(businessId: string, limit: number): Promise<TransactionRecord[]> {
+    // Insertion order stands in for the database's seq column. Sorting on
+    // createdAt here would reproduce the same-second ambiguity seq exists to
+    // avoid, and the test would stop catching it.
     return this.transactions
       .filter((t) => t.businessId === businessId && t.voidedAt === null)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice()
+      .reverse()
       .slice(0, limit);
   }
 
@@ -131,6 +186,22 @@ export class InMemoryStore implements Store {
     if (!row) return null;
     row.voidedAt = new Date();
     return row;
+  }
+
+  async voidLastEntry(businessId: string): Promise<TransactionRecord[]> {
+    const [latest] = await this.listRecentTransactions(businessId, 1);
+    if (!latest) return [];
+
+    const siblings = latest.groupId
+      ? this.transactions.filter(
+          (t) =>
+            t.businessId === businessId && t.groupId === latest.groupId && t.voidedAt === null,
+        )
+      : [latest];
+
+    const voidedAt = new Date();
+    for (const row of siblings) row.voidedAt = voidedAt;
+    return siblings;
   }
 
   // --- conversation ---

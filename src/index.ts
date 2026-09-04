@@ -35,6 +35,7 @@ const app = createApp({
   ),
   tools: allTools,
   maxIterations: env.AGENT_MAX_ITERATIONS,
+  historyTurns: env.AGENT_HISTORY_TURNS,
   verifyToken: env.WHATSAPP_VERIFY_TOKEN,
   appSecret: env.WHATSAPP_APP_SECRET,
 });

@@ -45,6 +45,7 @@ export interface TransactionRecord {
   productRef: string | null;
   customerId: string | null;
   quantity: number | null;
+  groupId: string | null;
   source: 'typed' | 'ocr';
   voidedAt: Date | null;
   createdAt: Date;
@@ -63,6 +64,7 @@ export interface NewTransaction {
   productRef?: string | null;
   customerId?: string | null;
   quantity?: number | null;
+  groupId?: string | null;
   source?: 'typed' | 'ocr';
 }
 
@@ -112,6 +114,21 @@ export interface Store {
    */
   adjustStock(businessId: string, productId: string, delta: number): Promise<ProductRecord | null>;
 
+  // --- customers ---
+
+  findCustomerByName(businessId: string, name: string): Promise<CustomerRecord | null>;
+  listCustomers(businessId: string): Promise<CustomerRecord[]>;
+  createCustomer(businessId: string, name: string): Promise<CustomerRecord>;
+  /**
+   * Net of sales minus payments, per customer. Positive means they owe.
+   * Computed from transactions rather than kept as a running column: a stored
+   * balance and a voided transaction drift apart the moment anyone corrects
+   * anything.
+   */
+  customerBalance(businessId: string, customerId: string): Promise<string>;
+  /** Every customer with a non-zero balance, largest debt first. */
+  outstandingBalances(businessId: string): Promise<Array<{ customer: CustomerRecord; balance: string }>>;
+
   // --- transactions ---
 
   createTransaction(businessId: string, tx: NewTransaction): Promise<TransactionRecord>;
@@ -119,6 +136,11 @@ export interface Store {
   listRecentTransactions(businessId: string, limit: number): Promise<TransactionRecord[]>;
   /** Returns the voided row, or null if it was already voided or not found. */
   voidTransaction(businessId: string, transactionId: string): Promise<TransactionRecord | null>;
+  /**
+   * Void the most recent entry, including every row sharing its group id.
+   * Returns the voided rows, or an empty array when there is nothing to undo.
+   */
+  voidLastEntry(businessId: string): Promise<TransactionRecord[]>;
 
   // --- conversation ---
 

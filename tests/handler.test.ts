@@ -23,7 +23,7 @@ describe('handleInboundMessage', () => {
     llm = new ScriptedLlmClient(
       ...Array.from({ length: 5 }, () => textResponse('Got it.')),
     );
-    deps = { store, sender, logger: silentLogger, llm, tools: [], maxIterations: 3 };
+    deps = { store, sender, logger: silentLogger, llm, tools: [], maxIterations: 3, historyTurns: 10 };
   });
 
   it('walks a brand new number through two-message onboarding', async () => {
@@ -124,6 +124,30 @@ describe('handleInboundMessage', () => {
     expect(last).toContain('voice note');
     expect(last).toContain('Type it out');
     expect(store.toolCalls).toHaveLength(0);
+  });
+
+  it('replays past turns so a follow-up message makes sense', async () => {
+    const from = '2348031234567';
+    await handleInboundMessage(deps, textMessage({ from, text: 'hi' }));
+    await handleInboundMessage(deps, textMessage({ from, text: 'Mama Chika' }));
+    await handleInboundMessage(deps, textMessage({ from, text: 'sold 3 cartons' }));
+    await handleInboundMessage(deps, textMessage({ from, text: 'undo that' }));
+
+    // The second agent turn sees the first exchange, so "undo that" has a
+    // referent instead of arriving with no context.
+    expect(llm.requests[1]?.messages).toEqual([
+      { role: 'user', content: 'sold 3 cartons' },
+      { role: 'assistant', content: 'Got it.' },
+      { role: 'user', content: 'undo that' },
+    ]);
+  });
+
+  it('does not record onboarding turns as conversation history', async () => {
+    const from = '2348031234567';
+    await handleInboundMessage(deps, textMessage({ from, text: 'hi' }));
+    await handleInboundMessage(deps, textMessage({ from, text: 'Mama Chika' }));
+
+    expect(store.messages).toHaveLength(0);
   });
 
   it('keeps two businesses separate', async () => {

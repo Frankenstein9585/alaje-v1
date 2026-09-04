@@ -1,3 +1,4 @@
+import type { LlmMessage } from './agent/llm.js';
 import { runAgent, type AgentDeps } from './agent/loop.js';
 import {
   NAME_REJECTED_MESSAGE,
@@ -17,6 +18,8 @@ export interface HandlerDeps extends Pick<AgentDeps, 'llm' | 'tools' | 'maxItera
   store: Store;
   sender: WhatsAppSender;
   logger: Logger;
+  /** How many past turns to replay as context. */
+  historyTurns: number;
 }
 
 /**
@@ -83,6 +86,15 @@ export async function handleInboundMessage(
   }
 
   // 5. Fully onboarded — hand off to the agent, scoped to this business.
+  // Past turns let the owner answer a clarifying question or say "undo that"
+  // and be understood. A transcript, not a state machine.
+  const past = await deps.store.recentMessages(business.id, deps.historyTurns);
+  const history: LlmMessage[] = past.map((turn) =>
+    turn.role === 'user'
+      ? { role: 'user', content: turn.content }
+      : { role: 'assistant', content: turn.content },
+  );
+
   const reply = await runAgent(
     {
       store: deps.store,
@@ -93,6 +105,20 @@ export async function handleInboundMessage(
     },
     business,
     message,
+    history,
   );
   await deps.sender.sendText(message.from, reply);
+
+  // Record both sides so the next turn has context. Failing to write history
+  // must not cost the owner their reply, which has already been sent.
+  try {
+    await deps.store.appendMessage(business.id, {
+      role: 'user',
+      content: message.text,
+      waMessageId: message.waMessageId,
+    });
+    await deps.store.appendMessage(business.id, { role: 'assistant', content: reply });
+  } catch (err) {
+    businessLog.error({ err }, 'failed to append conversation history');
+  }
 }

@@ -61,19 +61,23 @@ CREATE TABLE `tool_call_logs` (
 --> statement-breakpoint
 CREATE TABLE `transactions` (
 	`id` varchar(36) NOT NULL,
+	`seq` bigint AUTO_INCREMENT NOT NULL,
 	`business_id` varchar(36) NOT NULL,
 	`type` enum('sale','expense','payment') NOT NULL,
 	`amount` decimal(14,2) NOT NULL,
 	`product_ref` varchar(36),
 	`customer_id` varchar(36),
 	`quantity` int,
+	`group_id` varchar(36),
 	`source` enum('typed','ocr') NOT NULL DEFAULT 'typed',
 	`voided_at` timestamp,
 	`created_at` timestamp NOT NULL DEFAULT (now()),
-	CONSTRAINT `transactions_id` PRIMARY KEY(`id`)
+	CONSTRAINT `transactions_id` PRIMARY KEY(`id`),
+	CONSTRAINT `transactions_seq_idx` UNIQUE(`seq`)
 );
 --> statement-breakpoint
 CREATE INDEX `messages_business_created_at_idx` ON `messages` (`business_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `tool_call_logs_business_idx` ON `tool_call_logs` (`business_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `transactions_business_created_at_idx` ON `transactions` (`business_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `transactions_business_customer_idx` ON `transactions` (`business_id`,`customer_id`);
+CREATE INDEX `transactions_business_customer_idx` ON `transactions` (`business_id`,`customer_id`);--> statement-breakpoint
+CREATE INDEX `transactions_business_seq_idx` ON `transactions` (`business_id`,`seq`);

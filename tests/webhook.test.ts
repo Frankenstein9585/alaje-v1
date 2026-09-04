@@ -46,6 +46,7 @@ describe('webhook', () => {
       llm: new ScriptedLlmClient(textResponse('Got it.'), textResponse('Got it.')),
       tools: [],
       maxIterations: 3,
+      historyTurns: 10,
       verifyToken: VERIFY_TOKEN,
       appSecret: APP_SECRET,
     });

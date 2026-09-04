@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { formatNaira, formatQuantity } from '../../format.js';
 import type { ProductRecord } from '../../store.js';
+import { describeBalance, findOrCreateCustomer } from './customers.js';
 import type { ToolContext, ToolDefinition } from './registry.js';
 
 /**
@@ -153,7 +155,19 @@ const recordSaleArgs = z.object({
     .number()
     .positive()
     .max(1_000_000_000)
-    .describe('Total amount received in naira. "42k" means 42000'),
+    .describe('Total amount of the sale in naira. "42k" means 42000'),
+  customer: z
+    .string()
+    .min(1)
+    .max(160)
+    .optional()
+    .describe('Who bought it, if the owner named them. Always pass this along when they do.'),
+  paid: z
+    .boolean()
+    .optional()
+    .describe(
+      'True if the customer has already paid in full. Leave empty or false if it was on credit or you are unsure.',
+    ),
 });
 
 export const recordSaleTool: ToolDefinition<z.infer<typeof recordSaleArgs>> = {
@@ -164,20 +178,38 @@ export const recordSaleTool: ToolDefinition<z.infer<typeof recordSaleArgs>> = {
   async execute(ctx, args) {
     const { product, created } = await findOrCreate(ctx, args.product);
 
+    const customer = args.customer ? await findOrCreateCustomer(ctx, args.customer) : null;
+
     const amount = args.amount.toFixed(2);
+    // One group per thing the owner said, so undoing reverses all of it.
+    const groupId = randomUUID();
     const transaction = await ctx.store.createTransaction(ctx.business.id, {
       type: 'sale',
       amount,
       productRef: product.id,
       quantity: args.quantity,
+      customerId: customer?.customer.id ?? null,
+      groupId,
     });
+
+    // A sale that was paid for immediately is logged as both the sale and the
+    // payment, so it nets to zero owed rather than showing as a phantom debt.
+    if (customer && args.paid) {
+      await ctx.store.createTransaction(ctx.business.id, {
+        type: 'payment',
+        amount,
+        customerId: customer.customer.id,
+        groupId,
+      });
+    }
 
     const updated =
       (await ctx.store.adjustStock(ctx.business.id, product.id, -args.quantity)) ?? product;
 
     const unit = updated.unit ?? 'unit';
+    const soldTo = customer ? ` to ${customer.customer.name}` : '';
     const parts = [
-      `Sold ${formatQuantity(args.quantity, unit)} of ${updated.name} for ${formatNaira(args.amount)}.`,
+      `Sold ${formatQuantity(args.quantity, unit)} of ${updated.name}${soldTo} for ${formatNaira(args.amount)}.`,
     ];
 
     // A negative count means our number was stale, not that the sale did not
@@ -192,6 +224,13 @@ export const recordSaleTool: ToolDefinition<z.infer<typeof recordSaleArgs>> = {
       }
     }
 
+    // What they owe now, so the owner never has to ask a second question.
+    let balance: string | null = null;
+    if (customer) {
+      balance = await ctx.store.customerBalance(ctx.business.id, customer.customer.id);
+      parts.push(describeBalance(customer.customer.name, balance));
+    }
+
     if (created) {
       parts.push(`I hadn't seen ${updated.name} before, so I started tracking it.`);
     }
@@ -201,6 +240,9 @@ export const recordSaleTool: ToolDefinition<z.infer<typeof recordSaleArgs>> = {
       transaction_id: transaction.id,
       amount_display: formatNaira(args.amount),
       product: summarize(updated),
+      customer: customer?.customer.name ?? null,
+      customer_balance: balance,
+      paid: args.paid ?? false,
       stock_went_negative: updated.stockQty < 0,
       product_created: created,
       display: parts.join(' '),

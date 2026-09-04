@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   decimal,
   index,
@@ -89,6 +90,13 @@ export const transactions = mysqlTable(
   'transactions',
   {
     id: id(),
+    /**
+     * Insertion order. created_at is a second-granularity TIMESTAMP, so two
+     * entries recorded in the same second sort arbitrarily and "undo the last
+     * thing" undoes the wrong one. This is the ordering key; created_at is for
+     * display and date filtering only.
+     */
+    seq: bigint('seq', { mode: 'number' }).autoincrement().notNull(),
     businessId: varchar('business_id', { length: 36 }).notNull(),
     type: mysqlEnum('type', ['sale', 'expense', 'payment']).notNull(),
     // Money is DECIMAL, never a float. Read back as a string; parse deliberately.
@@ -96,6 +104,12 @@ export const transactions = mysqlTable(
     productRef: varchar('product_ref', { length: 36 }),
     customerId: varchar('customer_id', { length: 36 }),
     quantity: int('quantity'),
+    /**
+     * Rows written from one thing the owner said share a group id. A sale paid
+     * for up front is a sale plus a payment; undoing it must void both, or the
+     * reversal leaves a phantom debt behind.
+     */
+    groupId: varchar('group_id', { length: 36 }),
     // Distinguishes an OCR-derived entry from a typed one — the only
     // difference between the two entry paths.
     source: mysqlEnum('source', ['typed', 'ocr']).notNull().default('typed'),
@@ -114,6 +128,9 @@ export const transactions = mysqlTable(
       t.createdAt,
     ),
     businessCustomerIdx: index('transactions_business_customer_idx').on(t.businessId, t.customerId),
+    // AUTO_INCREMENT needs to lead an index in InnoDB.
+    seqIdx: uniqueIndex('transactions_seq_idx').on(t.seq),
+    businessSeqIdx: index('transactions_business_seq_idx').on(t.businessId, t.seq),
   }),
 );
 
