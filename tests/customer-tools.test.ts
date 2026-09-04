@@ -45,16 +45,21 @@ describe('customer tools', () => {
     );
   });
 
-  it('nets a paid-up-front sale to zero owed', async () => {
-    const out = await call('record_sale', {
-      product: 'Indomie',
-      quantity: 3,
-      amount: 42000,
-      customer: 'Chika',
-      paid: true,
-    });
+  it('records a sale as owed, never as paid', async () => {
+    // A live model once inferred payment from a message that only described a
+    // sale, inventing money that never arrived. record_sale takes no "paid"
+    // flag: money in is its own event.
+    await call('record_sale', { product: 'Indomie', quantity: 3, amount: 42000, customer: 'Chika' });
 
-    // Logged as a sale plus a payment, so it is not a phantom debt.
+    expect(store.transactions.map((t) => t.type)).toEqual(['sale']);
+    const balance = await call('check_balance', { customer: 'Chika' });
+    expect(display(balance)).toBe('Chika owes ₦42,000.');
+  });
+
+  it('settles when the payment is recorded as its own event', async () => {
+    await call('record_sale', { product: 'Indomie', quantity: 3, amount: 42000, customer: 'Chika' });
+    const out = await call('record_payment', { customer: 'Chika', amount: 42000 });
+
     expect(store.transactions.map((t) => t.type)).toEqual(['sale', 'payment']);
     expect(display(out)).toContain('Chika is settled up.');
   });

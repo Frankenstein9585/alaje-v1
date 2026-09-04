@@ -59,21 +59,28 @@ describe('undo_last', () => {
     expect(display(balance)).toBe('Chika owes ₦4,200.');
   });
 
-  it('voids both halves of a paid-up-front sale', async () => {
-    await call('record_sale', {
-      product: 'Indomie',
-      quantity: 3,
-      amount: 42000,
-      customer: 'Chika',
-      paid: true,
+  it('voids every row sharing a group id, not just the newest', async () => {
+    // No tool currently writes a multi-row group, so this is built directly.
+    // The rule still has to hold: rows written from one thing the owner said
+    // reverse together, or undoing leaves half an entry behind.
+    const customer = await store.createCustomer(business.id, 'Chika');
+    const groupId = 'group-1';
+    await store.createTransaction(business.id, {
+      type: 'sale',
+      amount: '42000.00',
+      customerId: customer.id,
+      groupId,
+    });
+    await store.createTransaction(business.id, {
+      type: 'payment',
+      amount: '42000.00',
+      customerId: customer.id,
+      groupId,
     });
 
     await call('undo_last');
 
-    // Voiding only one half would leave a phantom debt or a phantom credit.
     expect(store.transactions.every((t) => t.voidedAt !== null)).toBe(true);
-    const balance = await call('check_balance', { customer: 'Chika' });
-    expect(display(balance)).toBe('Chika is settled up.');
   });
 
   it('reverses a payment', async () => {

@@ -162,13 +162,18 @@ const recordSaleArgs = z.object({
     .max(160)
     .optional()
     .describe('Who bought it, if the owner named them. Always pass this along when they do.'),
-  paid: z
-    .boolean()
-    .optional()
-    .describe(
-      'True if the customer has already paid in full. Leave empty or false if it was on credit or you are unsure.',
-    ),
 });
+
+/*
+ * There is deliberately no "paid" flag.
+ *
+ * It existed, and a live model set it to true on "sold 3 to chika for 42k" —
+ * a message that says nothing about payment — inventing a ₦42,000 payment that
+ * never happened and leaving the customer's balance wrong in the direction that
+ * loses the shop money. A boolean the model can reach for is a boolean it will
+ * reach for. Money arriving is its own event, with its own tool, its own audit
+ * row and its own undo.
+ */
 
 export const recordSaleTool: ToolDefinition<z.infer<typeof recordSaleArgs>> = {
   name: 'record_sale',
@@ -191,17 +196,6 @@ export const recordSaleTool: ToolDefinition<z.infer<typeof recordSaleArgs>> = {
       customerId: customer?.customer.id ?? null,
       groupId,
     });
-
-    // A sale that was paid for immediately is logged as both the sale and the
-    // payment, so it nets to zero owed rather than showing as a phantom debt.
-    if (customer && args.paid) {
-      await ctx.store.createTransaction(ctx.business.id, {
-        type: 'payment',
-        amount,
-        customerId: customer.customer.id,
-        groupId,
-      });
-    }
 
     const updated =
       (await ctx.store.adjustStock(ctx.business.id, product.id, -args.quantity)) ?? product;
@@ -242,7 +236,6 @@ export const recordSaleTool: ToolDefinition<z.infer<typeof recordSaleArgs>> = {
       product: summarize(updated),
       customer: customer?.customer.name ?? null,
       customer_balance: balance,
-      paid: args.paid ?? false,
       stock_went_negative: updated.stockQty < 0,
       product_created: created,
       display: parts.join(' '),

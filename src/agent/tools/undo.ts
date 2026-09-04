@@ -17,7 +17,7 @@ const undoLastArgs = z.object({});
 export const undoLastTool: ToolDefinition<z.infer<typeof undoLastArgs>> = {
   name: 'undo_last',
   description:
-    'Reverse the most recent thing that was recorded, when the owner says it was wrong or asks to undo it. Restores any stock that was deducted.',
+    "Reverse the most recent sale or payment. Use this whenever the owner says the last thing was wrong, or says to undo it, cancel it, remove it or fix it. It always targets the newest entry, so never ask which one they mean. Restores any stock that was deducted.",
   schema: undoLastArgs,
   async execute(ctx) {
     const voided = await ctx.store.voidLastEntry(ctx.business.id);

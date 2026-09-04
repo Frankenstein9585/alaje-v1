@@ -51,12 +51,19 @@ export interface ToolOutcome {
  * `$refStrategy: 'none'` inlines everything. Several gateways (and Gemini's
  * restricted schema subset) choke on `$ref`/`definitions`, and a tool the
  * provider silently drops looks exactly like a model that refuses to call it.
+ *
+ * `target: 'jsonSchema7'` is load bearing, not a default. The `openApi3` target
+ * emits the OpenAPI 3.0 form of exclusive bounds — `{minimum: 0,
+ * exclusiveMinimum: true}` — and providers that validate against draft-7 reject
+ * the whole request with "true is not of type number". Every tool call then
+ * fails at once, which presents as a model that has stopped calling tools
+ * rather than as a schema error. Draft-7 wants `exclusiveMinimum: 0`.
  */
 export function toolDefinitions(tools: AnyToolDefinition[]): LlmToolDefinition[] {
   return tools.map((tool) => {
     const schema = zodToJsonSchema(tool.schema, {
       $refStrategy: 'none',
-      target: 'openApi3',
+      target: 'jsonSchema7',
     }) as Record<string, unknown>;
     delete schema.$schema;
     return { name: tool.name, description: tool.description, parameters: schema };
