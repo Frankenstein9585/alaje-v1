@@ -1,8 +1,12 @@
 # alaje-v1
 
-AI Business Manager for SMEs — a WhatsApp-native assistant that records sales and
-expenses, tracks stock, and reports on the numbers, all through ordinary
-conversation. See `plans/Alaje.md` for the full specification.
+AI Business Manager for SMEs, a WhatsApp-native assistant that records sales,
+tracks stock and debts, and reports on the numbers, all through ordinary
+conversation.
+
+**Start here: [docs/OVERVIEW.md](docs/OVERVIEW.md)** covers the project end to
+end, including a slide outline for presenting it. `plans/Alaje.md` holds the
+original specification and `plans/phase-2.md` the build decisions.
 
 ## Status
 
