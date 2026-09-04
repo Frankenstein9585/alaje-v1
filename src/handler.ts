@@ -9,7 +9,7 @@ import {
   parseBusinessName,
 } from './businesses/onboarding.js';
 import { resolveBusiness } from './businesses/resolve.js';
-import type { Logger } from './logger.js';
+import { maskNumber, type Logger } from './logger.js';
 import type { Store } from './store.js';
 import type { WhatsAppSender } from './whatsapp/client.js';
 import type { InboundTextMessage } from './whatsapp/types.js';
@@ -36,6 +36,7 @@ export async function handleInboundMessage(
   message: InboundTextMessage,
 ): Promise<void> {
   const log = deps.logger.child({ waMessageId: message.waMessageId });
+  const turnStarted = Date.now();
 
   // 1. Dedupe before anything with a side effect. Claiming is atomic, so two
   //    concurrent retries cannot both proceed.
@@ -44,6 +45,11 @@ export async function handleInboundMessage(
     log.info('duplicate webhook message ignored');
     return;
   }
+
+  log.info(
+    { from: maskNumber(message.from), type: message.type, text: message.text },
+    `IN  ${message.text ?? `<${message.type}>`}`,
+  );
 
   // 2. Acknowledge immediately. An agent turn takes seconds and unbroken
   //    silence on WhatsApp reads as a broken bot. Best effort by contract.
@@ -57,6 +63,7 @@ export async function handleInboundMessage(
   if (isNew) {
     businessLog.info('new business created, onboarding started');
     await deps.sender.sendText(message.from, WELCOME_MESSAGE);
+    businessLog.info({ stage: 'welcome' }, `OUT ${WELCOME_MESSAGE.split('\n')[0]}`);
     return;
   }
 
@@ -95,6 +102,8 @@ export async function handleInboundMessage(
       : { role: 'assistant', content: turn.content },
   );
 
+  businessLog.debug({ historyTurns: past.length }, 'history loaded');
+
   const reply = await runAgent(
     {
       store: deps.store,
@@ -112,6 +121,7 @@ export async function handleInboundMessage(
     history,
   );
   await deps.sender.sendText(message.from, reply);
+  businessLog.info({ ms: Date.now() - turnStarted }, `OUT ${reply.replace(/\n/g, ' | ')}`);
 
   // Record both sides so the next turn has context. Failing to write history
   // must not cost the owner their reply, which has already been sent.

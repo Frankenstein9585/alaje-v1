@@ -105,13 +105,19 @@ export async function executeTool(
     const issues = parsed.error.issues
       .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
       .join('; ');
+    ctx.logger.warn({ tool: tool.name, args: raw, issues }, `TOOL ${tool.name} REJECTED ${issues}`);
     await logCall(ctx, tool.name, raw, { error: issues }, false);
     return fail(tool.name, `Invalid arguments: ${issues}`);
   }
 
+  const startedAt = Date.now();
   try {
     const value = await tool.execute(ctx, parsed.data);
     await logCall(ctx, tool.name, parsed.data, value, true);
+    ctx.logger.info(
+      { tool: tool.name, args: parsed.data, ms: Date.now() - startedAt },
+      `TOOL ${tool.name} ${JSON.stringify(parsed.data)}`,
+    );
     return { name: tool.name, content: JSON.stringify(value), isError: false, value };
   } catch (err) {
     // Log the real exception. A generic failure makes every root cause look

@@ -197,7 +197,31 @@ export const recordSaleTool: ToolDefinition<z.infer<typeof recordSaleArgs>> = {
     'Record a sale: log the money received and reduce the stock count. Use this whenever the owner says they sold something.',
   schema: recordSaleArgs,
   async execute(ctx, args) {
-    const { product, created } = await findOrCreate(ctx, args.product);
+    const existing = await ctx.store.findProductByName(ctx.business.id, args.product);
+
+    // Selling something with no stock behind it produces a negative count and
+    // a confusing reply. Ask for the stock first: it is one message, and it
+    // keeps the books honest instead of quietly going below zero.
+    if (!existing) {
+      return {
+        ok: true,
+        recorded: false,
+        reason: 'unknown_product',
+        display: `I don't have ${args.product} on your list yet. Tell me how many you have and I'll record the sale after that.`,
+      };
+    }
+    if (existing.stockQty <= 0) {
+      return {
+        ok: true,
+        recorded: false,
+        reason: 'out_of_stock',
+        product: summarize(existing),
+        display: `My count says you have no ${existing.name} left. Add what you restocked and I'll record this sale.`,
+      };
+    }
+
+    const product = existing;
+    const created = false;
 
     const customer = args.customer ? await findOrCreateCustomer(ctx, args.customer) : null;
 
@@ -227,10 +251,11 @@ export const recordSaleTool: ToolDefinition<z.infer<typeof recordSaleArgs>> = {
       `Sold ${formatQuantity(args.quantity, unit)} of ${updated.name}${soldTo} for ${formatNaira(args.amount)}.`,
     ];
 
-    // A negative count means our number was stale, not that the sale did not
-    // happen. Record the revenue and flag the count instead of refusing.
+    // Stock existed but did not cover the whole sale. The shop clearly had the
+    // goods, so the count was stale rather than the sale imaginary. Record it
+    // and say the count needs fixing.
     if (updated.stockQty < 0) {
-      parts.push(`Stock is now ${updated.stockQty}, so my count was off. Tell me the real number.`);
+      parts.push(`That takes you to ${updated.stockQty}, so my count was off. What's the real number?`);
     } else {
       parts.push(`${stockDisplay(updated)} left.`);
       if (isLow(updated)) {

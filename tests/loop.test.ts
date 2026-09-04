@@ -220,7 +220,7 @@ describe('runAgent', () => {
 
     const system = llm.requests[0]?.system ?? '';
     expect(system).toContain('Mama Chika Stores');
-    expect(system).toContain('one or two short lines');
+    expect(system).toContain('One or two lines');
     expect(system).toContain('Never state a number you did not get back from a tool');
   });
 });

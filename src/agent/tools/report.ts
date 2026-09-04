@@ -91,7 +91,7 @@ export const runReportTool: ToolDefinition<z.infer<typeof runReportArgs>> = {
       const names = await namesFor(ctx, missingCost);
       const which = names.length > 0 ? ` for ${names.join(', ')}` : '';
       lines.push(
-        `I can't work out profit yet — I don't know what you paid${which}. Tell me and I'll include it.`,
+        `I can't work out profit yet. I don't know what you paid${which}. Tell me and I'll add it in.`,
       );
     }
 

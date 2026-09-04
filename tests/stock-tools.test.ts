@@ -19,6 +19,7 @@ describe('stock tools', () => {
 
   const call = (name: string, args: unknown) =>
     executeTool(tools, ctx, { id: 'c1', name, argumentsJson: JSON.stringify(args) });
+  const display = (out: { value?: unknown }) => (out.value as { display: string }).display;
 
   beforeEach(() => {
     store = new InMemoryStore();
@@ -126,22 +127,38 @@ describe('stock tools', () => {
       expect(display).toContain("That's low.");
     });
 
-    it('records the sale even when stock would go negative, and flags the count', async () => {
-      // A real shop sells what is on the shelf. Refusing to record revenue
-      // because our count is stale is the worse failure.
+    it('asks for stock first rather than selling something it has never seen', async () => {
+      // Creating the product at zero and selling it into a negative count is
+      // the "something weird" this prevents. One extra message keeps the books
+      // honest.
+      const out = await call('record_sale', { product: 'Milo', quantity: 2, amount: 3000 });
+
+      expect(out.isError).toBe(false);
+      expect(out.value).toMatchObject({ recorded: false, reason: 'unknown_product' });
+      expect(display(out)).toContain("I don't have Milo on your list yet");
+      expect(store.transactions).toHaveLength(0);
+      expect(store.products.some((p) => p.name === 'Milo')).toBe(false);
+    });
+
+    it('asks for a restock rather than selling from an empty shelf', async () => {
+      await call('record_sale', { product: 'Indomie', quantity: 20, amount: 100000 });
+      expect(store.products[0]?.stockQty).toBe(0);
+
+      const out = await call('record_sale', { product: 'Indomie', quantity: 1, amount: 5000 });
+
+      expect(out.value).toMatchObject({ recorded: false, reason: 'out_of_stock' });
+      expect(display(out)).toContain('no Indomie left');
+      expect(store.transactions).toHaveLength(1); // only the first sale
+    });
+
+    it('still records a sale that only partly covers, and flags the count', async () => {
+      // Stock existed, so the goods were clearly on the shelf and our number
+      // is stale. Refusing real revenue over a bad count is the worse failure.
       const out = await call('record_sale', { product: 'Indomie', quantity: 25, amount: 300000 });
 
       expect(store.transactions).toHaveLength(1);
       expect(out.value).toMatchObject({ stock_went_negative: true });
-      expect((out.value as { display: string }).display).toContain('my count was off');
-    });
-
-    it('starts tracking an unknown product instead of refusing', async () => {
-      const out = await call('record_sale', { product: 'Milo', quantity: 2, amount: 3000 });
-
-      expect(out.isError).toBe(false);
-      expect(out.value).toMatchObject({ product_created: true });
-      expect(store.transactions).toHaveLength(1);
+      expect(display(out)).toContain('my count was off');
     });
 
     it('formats naira without kobo for whole amounts', async () => {
@@ -162,7 +179,7 @@ describe('stock tools', () => {
     });
   });
 
-  it('never touches another business, even given its product id', async () => {
+  it('cannot see another business stock, even under the same product name', async () => {
     await call('add_stock', { product: 'Indomie', quantity: 20 });
     const productId = store.products[0]?.id;
 
@@ -172,17 +189,18 @@ describe('stock tools', () => {
       logger: silentLogger,
     };
 
-    // Shop B sells "Indomie": it must create its own row, not touch biz-1's.
-    await executeTool(tools, otherCtx, {
+    const out = await executeTool(tools, otherCtx, {
       id: 'c1',
       name: 'record_sale',
       argumentsJson: JSON.stringify({ product: 'Indomie', quantity: 5, amount: 1000 }),
     });
 
-    const original = store.products.find((p) => p.id === productId);
-    expect(original?.stockQty).toBe(20);
-    expect(store.products).toHaveLength(2);
-    expect(store.transactions.every((t) => t.businessId === 'biz-2')).toBe(true);
+    // Shop B is told it has no Indomie, which is only true if biz-1's row is
+    // invisible to it. Stronger evidence of scoping than a parallel row.
+    expect((out.value as { display: string }).display).toContain("I don't have Indomie");
+    expect(store.products.find((p) => p.id === productId)?.stockQty).toBe(20);
+    expect(store.products).toHaveLength(1);
+    expect(store.transactions).toHaveLength(0);
   });
 
   it('logs every call with arguments, result and success', async () => {
