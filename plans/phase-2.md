@@ -1,7 +1,25 @@
 # Phase 2 Plan: The Agent Loop
 
-Status: proposed, not started.
-Prerequisite: Phase 1 (messaging skeleton) is on `main`.
+**Status: mostly built.** Kept as the record of what was decided and why, with
+each section marked against what actually shipped. Where the build diverged from
+this plan, the divergence and its reason are noted inline rather than edited out.
+
+| Section | Outcome |
+| --- | --- |
+| 2. Tool set | Built, and widened again after checking the landing page |
+| 3.1 Transcript | Built |
+| 3.2 Agent state | **Cut.** See the note in that section |
+| 4. Architecture | Built as described |
+| 5. Store additions | Built, plus customer methods and `voidLastEntry` |
+| 6. Tool behaviour | Built as described |
+| 7. Failure handling | Built |
+| 8. Tests | Built, 97 passing |
+| 9. Build order | Followed, with customers inserted after step 7 |
+
+**Not built:** `run_report`, in-chat invoice.
+
+**Never run:** no live model call, no applied migration, no real WhatsApp
+message. Every test uses a scripted LLM client and an in-memory store.
 
 ## 1. What Phase 2 delivers
 
@@ -60,6 +78,31 @@ Recommended Phase 2 tool set:
 That is five tools in Phase 2 and seven by Phase 4. Three was thin; seven is a
 coherent surface for "run a small shop from a chat window."
 
+### What actually shipped, and why it grew again
+
+Checking the landing page (`alaje.vercel.app`) after this section was written
+found a worse gap than the ones above. "Know exactly who owes you what" is one
+of four feature cards with nothing behind it, and the pitch's own canonical
+example, *"Sold 3 cartons of Indomie to Chika for ₦42,000"*, would have silently
+dropped Chika: the planned `record_sale(product, quantity, amount)` had nowhere
+to put a customer.
+
+So customers were pulled forward into Phase 2:
+
+| Tool | Shipped | Note |
+| --- | --- | --- |
+| `add_stock` | yes | |
+| `check_stock` | yes | |
+| `record_sale` | yes | Gained optional `customer` and `paid` |
+| `undo_last` | yes | Replaced the ref-based void; no `list_recent_transactions` |
+| `record_payment` | yes | Added. Also covers forwarded bank credit alerts |
+| `check_balance` | yes | Added |
+| `run_report` | no | Still outstanding |
+
+`list_recent_transactions` and ref-based voiding were dropped: "undo that" is how
+people correct things in chat, and `undo_last` covers it without short references
+or the agent state they would have needed.
+
 ## 3. The conversation-state problem
 
 The MVP plan states there is no conversation state table because "nothing in
@@ -86,6 +129,23 @@ Load the last N turns (start with N = 10, roughly one conversation) as message
 history on each request. This carries tone and continuity.
 
 ### 3.2 Agent state
+
+> **CUT, not built.** Kept because the reasoning still holds and this is the
+> first thing to reach for when the transcript proves insufficient.
+>
+> Two of its three jobs were covered more cheaply. `focus.transactionRef`
+> existed to make "undo that" resolvable; `undo_last` takes no arguments, so it
+> needs no referent. `pending` existed to stop an incomplete record being
+> written; nothing in the shipped tool set collects fields across turns, so
+> there is nothing to hold half-finished yet.
+>
+> The remaining job, `counters` for capping repeated failures and off-topic
+> churn, is genuinely unbuilt and remains a real gap. Nothing currently limits
+> how many failing turns a conversation can burn.
+>
+> **Build this when Phase 4 lands.** Receipt OCR that extracts an amount but no
+> vendor is exactly the slot-filling case `pending` was designed for, and at
+> that point the guarantee is worth the table.
 
 A transcript makes the model *likely* to remember. It does not make anything
 *impossible*, and there are a few places where we want a guarantee. One row per
@@ -263,62 +323,79 @@ new tool cannot forget to log.
 
 ### 4.4 Model configuration
 
-- Model: `claude-opus-5`.
-- Thinking: `{ type: "adaptive" }`. **Do not disable it.** With thinking off,
-  Opus 5 will occasionally write a tool call into its visible text instead of
-  emitting a `tool_use` block. The turn succeeds, no error is raised, and the
-  sale is never recorded while the owner is told it was. That failure mode is
-  unacceptable for a bookkeeping tool. Lower `effort` instead if cost needs
-  trimming.
-- `output_config: { effort: "medium" }`. Routing a short message across five
-  tools is not hard reasoning. Tunable.
-- `max_tokens: 2048`. Deliberately low: replies are WhatsApp messages and nothing
-  here produces long output.
-- Non-streaming. WhatsApp receives one finished message; there is nothing to
-  stream to.
-- Prompt caching: frozen instructions and tool definitions go in the cacheable
-  prefix, business name and date and history after it. Verify with
-  `usage.cache_read_input_tokens`; if it stays zero, something volatile has
-  leaked into the prefix.
+> **Superseded.** This section originally specified `claude-opus-5` with adaptive
+> thinking. Under the demo deadline the provider decision was reopened and
+> settled on an OpenAI-compatible gateway instead, so the loop can be pointed at
+> DeepSeek, OpenRouter, Groq, Together or OpenAI by changing three environment
+> variables. The reasoning is recorded here because the constraints still apply
+> whichever provider is chosen.
 
-At roughly 1.5K input and 200 output tokens per message, cost is around a cent
-per message before caching. Not a constraint at demo volume.
+Provider-independent decisions that held:
+
+- **Non-streaming.** WhatsApp receives one finished message; there is nothing to
+  stream to.
+- **`max_tokens` 2048.** Deliberately low. Replies are chat messages and nothing
+  here produces long output.
+- **Low temperature (0.2, not 0).** Bookkeeping wants repeatable tool arguments,
+  and a few gateways behave oddly at exactly zero.
+- **Stable prompt prefix.** Frozen instructions and tool definitions first,
+  business name and date and history after, so the cacheable prefix stays
+  byte-identical. `allTools` has a fixed order for the same reason.
+
+Carried over from the Anthropic-specific version, still worth knowing if the
+provider changes again: on models with configurable thinking, do not disable it.
+A model with reasoning off will occasionally write a tool call into its visible
+text instead of emitting a tool call block. The turn succeeds, nothing errors,
+and the sale is never recorded while the owner is told it was. Lower the effort
+setting instead of turning reasoning off.
+
+Cost is not a constraint at demo volume: a full demo including every test
+message is a few hundred calls.
 
 ### 4.5 New environment variables
 
-`ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` (default `claude-opus-5`), `AGENT_EFFORT`
-(default `medium`), `AGENT_MAX_ITERATIONS` (default 3), `AGENT_HISTORY_TURNS`
-(default 10). All validated in `src/env.ts`.
+As built, all validated in `src/env.ts`:
+
+`LLM_BASE_URL` (default OpenRouter), `LLM_MODEL`, `LLM_API_KEY`,
+`LLM_MAX_TOKENS` (2048), `LLM_TEMPERATURE` (0.2), `LLM_TIMEOUT_MS` (30000),
+`AGENT_MAX_ITERATIONS` (3), `AGENT_HISTORY_TURNS` (10).
+
+**The model must support tool calling.** One that does not will answer in prose
+and never emit a tool call, which looks like a broken agent rather than a config
+error.
 
 ## 5. Store additions
 
 Every method takes `businessId` first and filters on it. No exceptions.
 
+As built:
+
 ```
 findProductByName(businessId, name)         normalized match (case, whitespace, plural)
 listProducts(businessId)
-createProduct(businessId, {name, stockQty, lowStockThreshold})
-adjustStock(businessId, productId, delta)   atomic; returns the new row
-createTransaction(businessId, {...})
-listRecentTransactions(businessId, limit)
+createProduct(businessId, product)
+adjustStock(businessId, productId, delta)   single atomic relative UPDATE
+findCustomerByName(businessId, name)
+listCustomers(businessId)
+createCustomer(businessId, name)
+customerBalance(businessId, customerId)     summed from transactions, never stored
+outstandingBalances(businessId)
+createTransaction(businessId, tx)
+listRecentTransactions(businessId, limit)   ordered by seq, excludes voided
 voidTransaction(businessId, transactionId)
-appendMessage(businessId, {waMessageId, role, content})
+voidLastEntry(businessId)                   voids the newest entry and its group
+appendMessage(businessId, turn)
 recentMessages(businessId, limit)
-getState(businessId)                         parsed + validated, default on failure
-putState(businessId, state)                   whole-document replace
 ```
 
-Migration adds `transactions.voided_at TIMESTAMP NULL`, the `messages` table, and
-`agent_state (business_id PK, document JSON, updated_at)`.
+`getState` / `putState` were dropped with agent state. The customer methods and
+`voidLastEntry` were added.
 
-`putState` replaces the whole document rather than merging fields. `deriveState` is
-the only thing that produces one, so a partial update has no meaning and merge
-semantics would just hide bugs in it.
-Voiding sets `voided_at`; every report filters `voided_at IS NULL`. A reversing
-entry would also work but is harder to read in a demo.
+`adjustStock` is a single `UPDATE ... SET stock_qty = stock_qty + ?` rather than
+read-modify-write, since two messages can arrive concurrently and a lost update
+corrupts the count invisibly.
 
-`adjustStock` must be a single atomic `UPDATE ... SET stock_qty = stock_qty + ?`
-rather than read-modify-write, since two messages can arrive concurrently.
+`listRecentTransactions` orders by `seq`, not `created_at`. See section 11.
 
 ## 6. Tool behaviour worth deciding now
 
@@ -397,19 +474,26 @@ Acceptance:
 
 ## 9. Build order
 
-1. `LlmClient` port, `ScriptedLlmClient`, env additions.
-2. Migration: `voided_at`, `messages`, `agent_state`. Store methods.
-3. `AgentState` schema and `deriveState`, unit tested on their own before
-   anything depends on them.
-4. Tool registry, `ToolContext`, Zod to JSON Schema, logging wrapper.
-5. The loop, with tests against the scripted client. State read in, derived out,
-   rendered after the cache breakpoint.
-6. `add_stock` and `check_stock` (they make everything else testable by hand).
-7. `record_sale` with the low stock flag. Acceptance test.
-8. `list_recent_transactions` and `void_transaction`, with `focus.transactionRef`
-   carrying "undo that".
-9. Message history wired in, `mode` taking over from the `name IS NULL`
-   onboarding hack, verified against a real number end to end.
+What was actually built, in order:
+
+1. ~~`LlmClient` port, `ScriptedLlmClient`, env additions.~~ Plus the
+   OpenAI-compatible adapter, which was not in the original plan.
+2. ~~Migration.~~ `voided_at`, `messages`, `customers`, and later `seq` and
+   `group_id`. No `agent_state`.
+3. ~~`AgentState` and `deriveState`.~~ **Cut** — see section 3.2.
+4. ~~Tool registry, `ToolContext`, Zod to JSON Schema, logging wrapper.~~
+5. ~~The loop, with tests against the scripted client.~~
+6. ~~`add_stock` and `check_stock`.~~
+7. ~~`record_sale` with the low stock flag.~~
+8. ~~Customers, `record_payment`, `check_balance`~~ — inserted here after the
+   landing page check, and `record_sale` gained `customer` and `paid`.
+9. ~~`undo_last`~~, replacing the planned `list_recent_transactions` plus
+   ref-based void.
+10. ~~Message history wired in.~~ The `name IS NULL` onboarding hack stayed,
+    since `mode` lived on the cut agent state.
+11. `run_report` — **not built**.
+
+Never done: verified against a real number end to end.
 
 ## 10. Explicitly not in Phase 2
 
@@ -425,3 +509,50 @@ Two clarifications, since section 3 moved the line:
 - **Agent state is not a workflow engine.** If a future phase wants a second
   `pending.kind` with materially different rules, that is the point to stop and
   design properly rather than growing this one by accretion.
+
+
+## 11. Found while building
+
+Two bugs the tests caught that code review would not have, both of which would
+have surfaced live:
+
+- **`undo_last` undid the wrong entry.** Ordering was on `created_at`, and MySQL
+  `TIMESTAMP` is second-granularity, so two entries recorded in the same second
+  sorted arbitrarily. Transactions now carry an auto-increment `seq` which is the
+  ordering key; `created_at` is for display and date filtering only.
+- **Undoing a paid-up-front sale left a phantom debt.** That sale writes two rows
+  (a sale and a payment) and only one was being voided. Rows written from one
+  thing the owner said now share a `group_id` and are voided together.
+
+Both came from writing the test for the behaviour rather than for the
+implementation. Worth remembering when the remaining tools get built.
+
+## 12. Still outstanding
+
+Code:
+
+1. `run_report` — today, week, month. Every report filters `voided_at IS NULL`,
+   and numbers must match the underlying transactions exactly.
+2. In-chat invoice, since "clean invoice out automatically" is on the page.
+
+Never run, and therefore unverified:
+
+3. No live model call. Prompt quality, tool descriptions and whether the model
+   picks the right tool are all untested. Highest-risk unknown.
+4. Migration never applied. `bigint AUTO_INCREMENT` with a unique key is valid
+   InnoDB but has not been watched to succeed.
+5. No real WhatsApp message has reached the app. Signature verification, media
+   handling and the typing indicator are tested only against synthetic payloads.
+
+Landing page, where the build will not catch up in time:
+
+6. Remove or soften the proactive alerts card. It needs a scheduler *and*
+   pre-approved WhatsApp templates for business-initiated messages outside the
+   24-hour window, which is a policy problem rather than a code one.
+7. Drop "exportable as PDF".
+8. Decide what to say about voice notes and receipt photos. Both are listed as
+   input methods; the app declines them politely but does not support them.
+
+Still deliberately out of scope: proactive alerts and any scheduler, PDF export,
+the media pipeline for voice and OCR, and multi-step confirmation before a
+complete record is written.
