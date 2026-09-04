@@ -102,6 +102,10 @@ export async function handleInboundMessage(
       llm: deps.llm,
       tools: deps.tools,
       maxIterations: deps.maxIterations,
+      // Files go to the owner, who forwards them. A tool cannot pick anyone
+      // else: messaging another number would be a business-initiated message
+      // and would need a pre-approved template.
+      channel: { sender: deps.sender, to: message.from },
     },
     business,
     message,

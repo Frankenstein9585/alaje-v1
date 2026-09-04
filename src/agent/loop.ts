@@ -3,7 +3,12 @@ import type { BusinessRecord, Store } from '../store.js';
 import type { InboundTextMessage } from '../whatsapp/types.js';
 import { LlmError, type LlmClient, type LlmMessage, type LlmToolCall } from './llm.js';
 import { FALLBACK_REPLY, buildSystemPrompt } from './prompt.js';
-import { executeTool, toolDefinitions, type AnyToolDefinition } from './tools/registry.js';
+import {
+  executeTool,
+  toolDefinitions,
+  type AnyToolDefinition,
+  type ToolContext,
+} from './tools/registry.js';
 
 export interface AgentDeps {
   store: Store;
@@ -11,6 +16,8 @@ export interface AgentDeps {
   llm: LlmClient;
   tools: AnyToolDefinition[];
   maxIterations: number;
+  /** Passed to tools that send files. The recipient is fixed by the caller. */
+  channel?: ToolContext['channel'];
 }
 
 /**
@@ -32,7 +39,12 @@ export async function runAgent(
 ): Promise<string> {
   const system = buildSystemPrompt(business);
   const tools = toolDefinitions(deps.tools);
-  const ctx = { business, store: deps.store, logger: deps.logger };
+  const ctx: ToolContext = {
+    business,
+    store: deps.store,
+    logger: deps.logger,
+    ...(deps.channel ? { channel: deps.channel } : {}),
+  };
 
   const messages: LlmMessage[] = [...history, { role: 'user', content: message.text ?? '' }];
 

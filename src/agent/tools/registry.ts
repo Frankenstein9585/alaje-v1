@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { Logger } from '../../logger.js';
 import type { BusinessRecord, Store } from '../../store.js';
+import type { WhatsAppSender } from '../../whatsapp/client.js';
 import type { LlmToolCall, LlmToolDefinition } from '../llm.js';
 
 /**
@@ -15,6 +16,13 @@ export interface ToolContext {
   business: BusinessRecord;
   store: Store;
   logger: Logger;
+  /**
+   * Outbound channel, for the rare tool that sends a file rather than returning
+   * text. Optional so tools stay unit-testable without a channel, and so a
+   * future non-WhatsApp caller is possible. `to` is the owner's number, set by
+   * the loop; a tool can never choose a different recipient.
+   */
+  channel?: { sender: WhatsAppSender; to: string };
 }
 
 export interface ToolDefinition<A> {

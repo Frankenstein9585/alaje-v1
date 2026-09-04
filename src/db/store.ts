@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import { normalizeProductName } from '../format.js';
 import { koboToDecimal } from '../money.js';
 import type {
@@ -288,6 +288,42 @@ export class DrizzleStore implements Store {
       .set({ voidedAt })
       .where(and(eq(transactions.id, transactionId), eq(transactions.businessId, businessId)));
     return { ...row, voidedAt };
+  }
+
+  async transactionsBetween(
+    businessId: string,
+    from: Date,
+    to: Date,
+  ): Promise<TransactionRecord[]> {
+    return this.db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.businessId, businessId),
+          isNull(transactions.voidedAt),
+          gte(transactions.createdAt, from),
+          lt(transactions.createdAt, to),
+        ),
+      )
+      .orderBy(asc(transactions.seq));
+  }
+
+  async customerTransactions(
+    businessId: string,
+    customerId: string,
+  ): Promise<TransactionRecord[]> {
+    return this.db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.businessId, businessId),
+          eq(transactions.customerId, customerId),
+          isNull(transactions.voidedAt),
+        ),
+      )
+      .orderBy(asc(transactions.seq));
   }
 
   async voidLastEntry(businessId: string): Promise<TransactionRecord[]> {

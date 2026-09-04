@@ -136,6 +136,10 @@ export interface Store {
   listRecentTransactions(businessId: string, limit: number): Promise<TransactionRecord[]>;
   /** Returns the voided row, or null if it was already voided or not found. */
   voidTransaction(businessId: string, transactionId: string): Promise<TransactionRecord | null>;
+  /** Non-voided transactions in [from, to). Used by reports. */
+  transactionsBetween(businessId: string, from: Date, to: Date): Promise<TransactionRecord[]>;
+  /** Every non-voided transaction for one customer, oldest first. */
+  customerTransactions(businessId: string, customerId: string): Promise<TransactionRecord[]>;
   /**
    * Void the most recent entry, including every row sharing its group id.
    * Returns the voided rows, or an empty array when there is nothing to undo.

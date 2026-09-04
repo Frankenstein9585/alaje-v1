@@ -188,6 +188,29 @@ export class InMemoryStore implements Store {
     return row;
   }
 
+  async transactionsBetween(
+    businessId: string,
+    from: Date,
+    to: Date,
+  ): Promise<TransactionRecord[]> {
+    return this.transactions.filter(
+      (t) =>
+        t.businessId === businessId &&
+        t.voidedAt === null &&
+        t.createdAt >= from &&
+        t.createdAt < to,
+    );
+  }
+
+  async customerTransactions(
+    businessId: string,
+    customerId: string,
+  ): Promise<TransactionRecord[]> {
+    return this.transactions.filter(
+      (t) => t.businessId === businessId && t.customerId === customerId && t.voidedAt === null,
+    );
+  }
+
   async voidLastEntry(businessId: string): Promise<TransactionRecord[]> {
     const [latest] = await this.listRecentTransactions(businessId, 1);
     if (!latest) return [];
@@ -221,6 +244,14 @@ export class InMemoryStore implements Store {
 export class SpySender implements WhatsAppSender {
   readonly sent: Array<{ to: string; body: string }> = [];
   readonly acknowledged: string[] = [];
+  readonly documents: Array<{
+    to: string;
+    filename: string;
+    size: number;
+    caption?: string | undefined;
+  }> = [];
+  /** Set to exercise the text fallback. */
+  failDocuments = false;
 
   async sendText(to: string, body: string): Promise<void> {
     this.sent.push({ to, body });
@@ -228,6 +259,15 @@ export class SpySender implements WhatsAppSender {
 
   async acknowledge(waMessageId: string): Promise<void> {
     this.acknowledged.push(waMessageId);
+  }
+
+  async sendDocument(
+    to: string,
+    file: { buffer: Buffer; filename: string; mimeType: string },
+    caption?: string,
+  ): Promise<void> {
+    if (this.failDocuments) throw new Error('media upload failed');
+    this.documents.push({ to, filename: file.filename, size: file.buffer.length, caption });
   }
 }
 

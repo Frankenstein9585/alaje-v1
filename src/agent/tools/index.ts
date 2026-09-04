@@ -1,4 +1,6 @@
 import { checkBalanceTool, recordPaymentTool } from './customers.js';
+import { sendInvoiceTool } from './invoice.js';
+import { runReportTool } from './report.js';
 import type { AnyToolDefinition } from './registry.js';
 import { addStockTool, checkStockTool, recordSaleTool } from './stock.js';
 import { undoLastTool } from './undo.js';
@@ -14,4 +16,6 @@ export const allTools: AnyToolDefinition[] = [
   recordPaymentTool,
   checkBalanceTool,
   undoLastTool,
+  runReportTool,
+  sendInvoiceTool,
 ];

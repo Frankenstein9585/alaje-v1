@@ -1,0 +1,227 @@
+import PDFDocument from 'pdfkit';
+import { formatNaira, formatQuantity } from './format.js';
+import { koboToDecimal, toKobo } from './money.js';
+import type { ProductRecord, TransactionRecord } from './store.js';
+
+/**
+ * Invoice rendering.
+ *
+ * Deliberately plain: a shop owner forwards this to a customer, or shows it to
+ * a bank. It has to look like a document, not like a chat export. No logo, no
+ * colour beyond a rule and a total, nothing that depends on a font being
+ * installed — pdfkit's built-in Helvetica only.
+ *
+ * Naira is rendered as "NGN" rather than the ₦ glyph: the built-in PDF fonts
+ * are WinAnsi-encoded and have no ₦, so it would silently come out as garbage.
+ * Embedding a Unicode font would fix it and is not worth the bytes here.
+ */
+
+export interface InvoiceLine {
+  description: string;
+  quantity: number | null;
+  unit: string | null;
+  amount: string;
+}
+
+export interface InvoiceData {
+  businessName: string;
+  customerName: string;
+  /** Short, human-quotable. Not a UUID. */
+  reference: string;
+  issuedAt: Date;
+  lines: InvoiceLine[];
+  totalBilled: string;
+  totalPaid: string;
+  balance: string;
+}
+
+/** Build invoice data from a customer's transaction history. */
+export function buildInvoice(
+  businessName: string,
+  customerName: string,
+  transactions: TransactionRecord[],
+  products: Map<string, ProductRecord>,
+  now: Date = new Date(),
+): InvoiceData {
+  const lines: InvoiceLine[] = [];
+  let billedKobo = 0;
+  let paidKobo = 0;
+
+  for (const tx of transactions) {
+    if (tx.type === 'payment') {
+      paidKobo += toKobo(tx.amount);
+      continue;
+    }
+    billedKobo += toKobo(tx.amount);
+    const product = tx.productRef ? products.get(tx.productRef) : undefined;
+    lines.push({
+      description: product?.name ?? 'Item',
+      quantity: tx.quantity,
+      unit: product?.unit ?? null,
+      amount: tx.amount,
+    });
+  }
+
+  return {
+    businessName,
+    customerName,
+    // Date plus a short random tail: quotable over the phone, and it does not
+    // leak how many invoices the business has issued.
+    reference: `INV-${formatDateCompact(now)}-${randomTail()}`,
+    issuedAt: now,
+    lines,
+    totalBilled: koboToDecimal(billedKobo),
+    totalPaid: koboToDecimal(paidKobo),
+    balance: koboToDecimal(billedKobo - paidKobo),
+  };
+}
+
+export function renderInvoicePdf(data: InvoiceData): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const chunks: Buffer[] = [];
+
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const left = 50;
+    const right = 545;
+
+    doc.fontSize(20).font('Helvetica-Bold').text(data.businessName, left, 50);
+    doc.fontSize(10).font('Helvetica').fillColor('#555').text('INVOICE', left, 78);
+    doc.fillColor('#000');
+
+    doc
+      .fontSize(9)
+      .text(data.reference, left, 50, { width: right - left, align: 'right' })
+      .text(formatDateLong(data.issuedAt), { width: right - left, align: 'right' });
+
+    doc.moveTo(left, 100).lineTo(right, 100).strokeColor('#ddd').stroke();
+
+    doc.fontSize(9).fillColor('#555').text('BILL TO', left, 115);
+    doc.fontSize(12).fillColor('#000').font('Helvetica-Bold').text(data.customerName, left, 128);
+
+    let y = 165;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#555');
+    doc.text('DESCRIPTION', left, y);
+    doc.text('QTY', 360, y, { width: 60, align: 'right' });
+    doc.text('AMOUNT', 440, y, { width: 105, align: 'right' });
+    doc.fillColor('#000');
+
+    y += 14;
+    doc.moveTo(left, y).lineTo(right, y).strokeColor('#ddd').stroke();
+    y += 10;
+
+    doc.font('Helvetica').fontSize(10);
+    for (const line of data.lines) {
+      // Start a new page before running off the bottom.
+      if (y > 700) {
+        doc.addPage();
+        y = 50;
+      }
+      doc.text(line.description, left, y, { width: 300 });
+      doc.text(
+        line.quantity === null ? '' : formatQuantity(line.quantity, line.unit ?? 'unit'),
+        360,
+        y,
+        { width: 60, align: 'right' },
+      );
+      doc.text(formatAmount(line.amount), 440, y, { width: 105, align: 'right' });
+      y += 20;
+    }
+
+    if (data.lines.length === 0) {
+      doc.fillColor('#777').text('No items billed.', left, y);
+      doc.fillColor('#000');
+      y += 20;
+    }
+
+    y += 6;
+    doc.moveTo(340, y).lineTo(right, y).strokeColor('#ddd').stroke();
+    y += 12;
+
+    y = totalRow(doc, 'Total billed', formatAmount(data.totalBilled), y, false);
+    if (toKobo(data.totalPaid) > 0) {
+      y = totalRow(doc, 'Paid', `- ${formatAmount(data.totalPaid)}`, y, false);
+    }
+    y = totalRow(doc, balanceLabel(data.balance), formatAmount(data.balance), y + 4, true);
+
+    doc
+      .font('Helvetica')
+      .fontSize(8)
+      .fillColor('#777')
+      .text(`Generated by Alaje for ${data.businessName}`, left, 780, {
+        width: right - left,
+        align: 'center',
+      });
+
+    doc.end();
+  });
+}
+
+/** Plain-text invoice. The fallback when the PDF cannot be delivered. */
+export function renderInvoiceText(data: InvoiceData): string {
+  const lines = [`${data.businessName}`, `Invoice ${data.reference}`, `For: ${data.customerName}`, ''];
+
+  for (const line of data.lines) {
+    const qty = line.quantity === null ? '' : `${formatQuantity(line.quantity, line.unit ?? 'unit')} `;
+    lines.push(`${qty}${line.description} - ${formatNaira(line.amount)}`);
+  }
+  if (data.lines.length === 0) lines.push('No items billed.');
+
+  lines.push('');
+  lines.push(`Total: ${formatNaira(data.totalBilled)}`);
+  if (toKobo(data.totalPaid) > 0) lines.push(`Paid: ${formatNaira(data.totalPaid)}`);
+  lines.push(`${balanceLabel(data.balance)}: ${formatNaira(data.balance)}`);
+
+  return lines.join('\n');
+}
+
+function balanceLabel(balance: string): string {
+  return toKobo(balance) < 0 ? 'In credit' : 'Balance due';
+}
+
+/**
+ * The built-in PDF fonts have no ₦ glyph, so it would render as garbage.
+ * "NGN 42,000" is unambiguous and always renders.
+ */
+function formatAmount(amount: string): string {
+  return formatNaira(amount).replace('₦', 'NGN ');
+}
+
+function totalRow(
+  doc: PDFKit.PDFDocument,
+  label: string,
+  value: string,
+  y: number,
+  emphasis: boolean,
+): number {
+  doc.font(emphasis ? 'Helvetica-Bold' : 'Helvetica').fontSize(emphasis ? 12 : 10);
+  doc.text(label, 340, y, { width: 100, align: 'right' });
+  doc.text(value, 440, y, { width: 105, align: 'right' });
+  return y + (emphasis ? 22 : 18);
+}
+
+function formatDateLong(date: Date): string {
+  return new Intl.DateTimeFormat('en-NG', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Africa/Lagos',
+  }).format(date);
+}
+
+function formatDateCompact(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Africa/Lagos',
+  }).format(date);
+  return parts.replace(/-/g, '');
+}
+
+function randomTail(): string {
+  return Math.random().toString(36).slice(2, 6).toUpperCase();
+}
