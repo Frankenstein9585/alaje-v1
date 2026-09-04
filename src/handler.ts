@@ -1,6 +1,7 @@
-import { runAgent } from './agent/loop.js';
+import { runAgent, type AgentDeps } from './agent/loop.js';
 import {
   NAME_REJECTED_MESSAGE,
+  UNSUPPORTED_MEDIA_MESSAGE,
   WELCOME_MESSAGE,
   confirmationMessage,
   isOnboarding,
@@ -12,7 +13,7 @@ import type { Store } from './store.js';
 import type { WhatsAppSender } from './whatsapp/client.js';
 import type { InboundTextMessage } from './whatsapp/types.js';
 
-export interface HandlerDeps {
+export interface HandlerDeps extends Pick<AgentDeps, 'llm' | 'tools' | 'maxIterations'> {
   store: Store;
   sender: WhatsAppSender;
   logger: Logger;
@@ -22,9 +23,10 @@ export interface HandlerDeps {
  * Handle one inbound message. Order matters:
  *
  *   1. dedupe   — Meta retries; a retried payload must produce zero extra replies
- *   2. resolve  — deterministic business lookup, before any reasoning
- *   3. onboard  — a null business name means onboarding is still in progress
- *   4. agent    — only a fully-onboarded business reaches the tool layer
+ *   2. ack      — read receipt + typing, so the owner sees something immediately
+ *   3. resolve  — deterministic business lookup, before any reasoning
+ *   4. onboard  — a null business name means onboarding is still in progress
+ *   5. agent    — only a fully-onboarded business reaches the tool layer
  */
 export async function handleInboundMessage(
   deps: HandlerDeps,
@@ -40,11 +42,15 @@ export async function handleInboundMessage(
     return;
   }
 
-  // 2. Identity is resolved here, in code, and handed to everything downstream.
+  // 2. Acknowledge immediately. An agent turn takes seconds and unbroken
+  //    silence on WhatsApp reads as a broken bot. Best effort by contract.
+  await deps.sender.acknowledge(message.waMessageId);
+
+  // 3. Identity is resolved here, in code, and handed to everything downstream.
   const { business, isNew } = await resolveBusiness(deps.store, message.from);
   const businessLog = log.child({ businessId: business.id });
 
-  // 3. First contact: the row now exists with a null name; ask for it.
+  // 4. First contact: the row now exists with a null name; ask for it.
   if (isNew) {
     businessLog.info('new business created, onboarding started');
     await deps.sender.sendText(message.from, WELCOME_MESSAGE);
@@ -66,7 +72,27 @@ export async function handleInboundMessage(
     return;
   }
 
-  // 4. Fully onboarded — hand off to the agent, scoped to this business.
-  const reply = await runAgent({ store: deps.store, logger: businessLog }, business, message);
+  // Media we cannot act on yet. Never drop it silently: the owner sent
+  // something real and deserves to know it did not land, plus a way forward.
+  if (!message.text) {
+    const kind =
+      message.type === 'audio' ? 'audio' : message.type === 'image' ? 'image' : 'other';
+    businessLog.info({ messageType: message.type }, 'unsupported message type');
+    await deps.sender.sendText(message.from, UNSUPPORTED_MEDIA_MESSAGE[kind]);
+    return;
+  }
+
+  // 5. Fully onboarded — hand off to the agent, scoped to this business.
+  const reply = await runAgent(
+    {
+      store: deps.store,
+      logger: businessLog,
+      llm: deps.llm,
+      tools: deps.tools,
+      maxIterations: deps.maxIterations,
+    },
+    business,
+    message,
+  );
   await deps.sender.sendText(message.from, reply);
 }

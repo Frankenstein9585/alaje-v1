@@ -3,7 +3,7 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { WELCOME_MESSAGE } from '../src/businesses/onboarding.js';
-import { InMemoryStore, SpySender, silentLogger } from './fakes.js';
+import { InMemoryStore, ScriptedLlmClient, SpySender, silentLogger, textResponse } from './fakes.js';
 
 const APP_SECRET = 'test-app-secret';
 const VERIFY_TOKEN = 'test-verify-token';
@@ -43,6 +43,9 @@ describe('webhook', () => {
       store,
       sender,
       logger: silentLogger,
+      llm: new ScriptedLlmClient(textResponse('Got it.'), textResponse('Got it.')),
+      tools: [],
+      maxIterations: 3,
       verifyToken: VERIFY_TOKEN,
       appSecret: APP_SECRET,
     });

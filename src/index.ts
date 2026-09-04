@@ -1,4 +1,6 @@
 import { createApp } from './app.js';
+import { OpenAiCompatClient } from './agent/openai-compat.js';
+import { allTools } from './agent/tools/index.js';
 import { createDb } from './db/client.js';
 import { DrizzleStore } from './db/store.js';
 import { loadEnv } from './env.js';
@@ -19,6 +21,20 @@ const app = createApp({
     logger,
   ),
   logger,
+  llm: new OpenAiCompatClient(
+    {
+      baseUrl: env.LLM_BASE_URL,
+      model: env.LLM_MODEL,
+      apiKey: env.LLM_API_KEY,
+      maxTokens: env.LLM_MAX_TOKENS,
+      temperature: env.LLM_TEMPERATURE,
+      timeoutMs: env.LLM_TIMEOUT_MS,
+      appTitle: 'Alaje',
+    },
+    logger,
+  ),
+  tools: allTools,
+  maxIterations: env.AGENT_MAX_ITERATIONS,
   verifyToken: env.WHATSAPP_VERIFY_TOKEN,
   appSecret: env.WHATSAPP_APP_SECRET,
 });
