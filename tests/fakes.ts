@@ -11,6 +11,7 @@ import type {
   ProductRecord,
   Store,
   ToolCallLogEntry,
+  ToolCallRecord,
   TransactionRecord,
 } from '../src/store.js';
 import type { LlmClient, LlmRequest, LlmResponse } from '../src/agent/llm.js';
@@ -55,6 +56,19 @@ export class InMemoryStore implements Store {
 
   async logToolCall(entry: ToolCallLogEntry): Promise<void> {
     this.toolCalls.push(entry);
+  }
+
+  async listToolCalls(businessId: string, limit: number): Promise<ToolCallRecord[]> {
+    return this.toolCalls
+      .filter((c) => c.businessId === businessId)
+      .slice(-limit)
+      .map((c) => ({
+        toolName: c.toolName,
+        arguments: c.arguments,
+        result: c.result,
+        success: c.success,
+        createdAt: new Date(),
+      }));
   }
 
   // --- products ---

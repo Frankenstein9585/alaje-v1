@@ -82,6 +82,14 @@ export interface ToolCallLogEntry {
   success: boolean;
 }
 
+export interface ToolCallRecord {
+  toolName: string;
+  arguments: unknown;
+  result: unknown;
+  success: boolean;
+  createdAt: Date;
+}
+
 export interface ConversationTurn {
   role: 'user' | 'assistant';
   content: string;
@@ -106,6 +114,8 @@ export interface Store {
   setBusinessName(businessId: string, name: string): Promise<void>;
 
   logToolCall(entry: ToolCallLogEntry): Promise<void>;
+  /** Read the audit trail back, oldest first. */
+  listToolCalls(businessId: string, limit: number): Promise<ToolCallRecord[]>;
 
   // --- products ---
 

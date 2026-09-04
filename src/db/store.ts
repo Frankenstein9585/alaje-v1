@@ -11,6 +11,7 @@ import type {
   ProductRecord,
   Store,
   ToolCallLogEntry,
+  ToolCallRecord,
   TransactionRecord,
 } from '../store.js';
 import type { Db } from './client.js';
@@ -94,6 +95,22 @@ export class DrizzleStore implements Store {
       result: entry.result ?? null,
       success: entry.success,
     });
+  }
+
+  async listToolCalls(businessId: string, limit: number): Promise<ToolCallRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(toolCallLogs)
+      .where(eq(toolCallLogs.businessId, businessId))
+      .orderBy(desc(toolCallLogs.createdAt))
+      .limit(limit);
+    return rows.reverse().map((r) => ({
+      toolName: r.toolName,
+      arguments: r.arguments,
+      result: r.result,
+      success: r.success,
+      createdAt: r.createdAt,
+    }));
   }
 
   async findProductByName(businessId: string, name: string): Promise<ProductRecord | null> {
