@@ -1,6 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import pino from 'pino';
-import type { BusinessRecord, Store, ToolCallLogEntry } from '../src/store.js';
+import { normalizeProductName } from '../src/format.js';
+import type {
+  BusinessRecord,
+  ConversationTurn,
+  NewProduct,
+  NewTransaction,
+  ProductRecord,
+  Store,
+  ToolCallLogEntry,
+  TransactionRecord,
+} from '../src/store.js';
 import type { LlmClient, LlmRequest, LlmResponse } from '../src/agent/llm.js';
 import type { WhatsAppSender } from '../src/whatsapp/client.js';
 
@@ -9,6 +19,9 @@ export const silentLogger = pino({ level: 'silent' });
 export class InMemoryStore implements Store {
   readonly businesses: BusinessRecord[] = [];
   readonly toolCalls: ToolCallLogEntry[] = [];
+  readonly products: ProductRecord[] = [];
+  readonly transactions: TransactionRecord[] = [];
+  readonly messages: Array<{ businessId: string; turn: ConversationTurn }> = [];
   private readonly claimed = new Set<string>();
 
   async claimMessage(waMessageId: string): Promise<boolean> {
@@ -39,6 +52,98 @@ export class InMemoryStore implements Store {
 
   async logToolCall(entry: ToolCallLogEntry): Promise<void> {
     this.toolCalls.push(entry);
+  }
+
+  // --- products ---
+
+  async findProductByName(businessId: string, name: string): Promise<ProductRecord | null> {
+    const normalized = normalizeProductName(name);
+    return (
+      this.products.find((p) => p.businessId === businessId && p.normalizedName === normalized) ??
+      null
+    );
+  }
+
+  async listProducts(businessId: string): Promise<ProductRecord[]> {
+    return this.products
+      .filter((p) => p.businessId === businessId)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async createProduct(businessId: string, product: NewProduct): Promise<ProductRecord> {
+    const row: ProductRecord = {
+      id: randomUUID(),
+      businessId,
+      name: product.name.trim(),
+      normalizedName: normalizeProductName(product.name),
+      unit: product.unit ?? null,
+      stockQty: product.stockQty ?? 0,
+      lowStockThreshold: product.lowStockThreshold ?? 0,
+    };
+    this.products.push(row);
+    return row;
+  }
+
+  async adjustStock(
+    businessId: string,
+    productId: string,
+    delta: number,
+  ): Promise<ProductRecord | null> {
+    const row = this.products.find((p) => p.id === productId && p.businessId === businessId);
+    if (!row) return null;
+    row.stockQty += delta;
+    return row;
+  }
+
+  // --- transactions ---
+
+  async createTransaction(businessId: string, tx: NewTransaction): Promise<TransactionRecord> {
+    const row: TransactionRecord = {
+      id: randomUUID(),
+      businessId,
+      type: tx.type,
+      amount: tx.amount,
+      productRef: tx.productRef ?? null,
+      customerId: tx.customerId ?? null,
+      quantity: tx.quantity ?? null,
+      source: tx.source ?? 'typed',
+      voidedAt: null,
+      createdAt: new Date(),
+    };
+    this.transactions.push(row);
+    return row;
+  }
+
+  async listRecentTransactions(businessId: string, limit: number): Promise<TransactionRecord[]> {
+    return this.transactions
+      .filter((t) => t.businessId === businessId && t.voidedAt === null)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit);
+  }
+
+  async voidTransaction(
+    businessId: string,
+    transactionId: string,
+  ): Promise<TransactionRecord | null> {
+    const row = this.transactions.find(
+      (t) => t.id === transactionId && t.businessId === businessId && t.voidedAt === null,
+    );
+    if (!row) return null;
+    row.voidedAt = new Date();
+    return row;
+  }
+
+  // --- conversation ---
+
+  async appendMessage(businessId: string, turn: ConversationTurn): Promise<void> {
+    this.messages.push({ businessId, turn });
+  }
+
+  async recentMessages(businessId: string, limit: number): Promise<ConversationTurn[]> {
+    return this.messages
+      .filter((m) => m.businessId === businessId)
+      .slice(-limit)
+      .map((m) => m.turn);
   }
 }
 

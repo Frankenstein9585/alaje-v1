@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "afa00e40-6f0e-4c06-b5de-8598fcb6e59b",
+  "id": "a1e7fead-7e7f-4e1f-9034-12489c807c06",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "businesses": {
@@ -50,6 +50,137 @@
       "compositePrimaryKeys": {
         "businesses_id": {
           "name": "businesses_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "customers": {
+      "name": "customers",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(36)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "varchar(36)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(160)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "normalized_name": {
+          "name": "normalized_name",
+          "type": "varchar(160)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        }
+      },
+      "indexes": {
+        "customers_business_normalized_name_idx": {
+          "name": "customers_business_normalized_name_idx",
+          "columns": [
+            "business_id",
+            "normalized_name"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "customers_id": {
+          "name": "customers_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "messages": {
+      "name": "messages",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(36)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "business_id": {
+          "name": "business_id",
+          "type": "varchar(36)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "wa_message_id": {
+          "name": "wa_message_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "enum('user','assistant')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        }
+      },
+      "indexes": {
+        "messages_business_created_at_idx": {
+          "name": "messages_business_created_at_idx",
+          "columns": [
+            "business_id",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "messages_id": {
+          "name": "messages_id",
           "columns": [
             "id"
           ]
@@ -129,6 +260,20 @@
           "notNull": true,
           "autoincrement": false
         },
+        "normalized_name": {
+          "name": "normalized_name",
+          "type": "varchar(160)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit": {
+          "name": "unit",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "stock_qty": {
           "name": "stock_qty",
           "type": "int",
@@ -155,11 +300,11 @@
         }
       },
       "indexes": {
-        "products_business_name_idx": {
-          "name": "products_business_name_idx",
+        "products_business_normalized_name_idx": {
+          "name": "products_business_normalized_name_idx",
           "columns": [
             "business_id",
-            "name"
+            "normalized_name"
           ],
           "isUnique": true
         }
@@ -271,7 +416,7 @@
         },
         "type": {
           "name": "type",
-          "type": "enum('sale','expense')",
+          "type": "enum('sale','expense','payment')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -290,6 +435,20 @@
           "notNull": false,
           "autoincrement": false
         },
+        "customer_id": {
+          "name": "customer_id",
+          "type": "varchar(36)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "source": {
           "name": "source",
           "type": "enum('typed','ocr')",
@@ -297,6 +456,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'typed'"
+        },
+        "voided_at": {
+          "name": "voided_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",
@@ -313,6 +479,14 @@
           "columns": [
             "business_id",
             "created_at"
+          ],
+          "isUnique": false
+        },
+        "transactions_business_customer_idx": {
+          "name": "transactions_business_customer_idx",
+          "columns": [
+            "business_id",
+            "customer_id"
           ],
           "isUnique": false
         }
