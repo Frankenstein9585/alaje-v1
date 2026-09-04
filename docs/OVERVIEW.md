@@ -229,7 +229,76 @@ and a token limit hit with no text returned.
 **The lesson worth repeating on stage: none of these were reachable by code
 review or by unit tests.** They needed a real model and real traffic.
 
-## 10. Running it
+## 10. How this makes money
+
+### The constraint that decides everything
+
+A provisions shop nets somewhere around 150,000 to 900,000 naira a month.
+Realistic software tolerance is **1,000 to 5,000 naira a month**, and even that
+has to be collected without a card, since recurring card billing barely works
+in this market.
+
+The cost side is where the model choice already did business work. On DeepSeek
+at roughly 1,500 tokens in and 200 out, a message costs well under a naira, so
+a thousand messages a month lands around 900 naira. On a premium model the same
+shop costs 15,000 a month and the subscription is underwater before anything
+else is paid for.
+
+**Cheap model tool routing is not a corner cut, it is what makes the unit
+economics work at all.**
+
+Meta helps too. User initiated service conversations are free, and the entire
+core loop is user initiated. Proactive alerts would move into paid template
+messages, which is a second reason that feature is not free to add. Meta
+pricing changes; verify before relying on it.
+
+### The wedge: freemium at 2,500 naira a month
+
+Free tier capped at around 100 messages a month, enough for a shop to feel the
+value and not enough to run a business on. Paid is unlimited, plus invoices and
+reports.
+
+This is the wedge, not the business. At 2,500 naira with perhaps 30 percent
+converting, it takes tens of thousands of shops to make real revenue, and SME
+churn in this market is punishing.
+
+### The actual business
+
+**1. Lending.** Alaje generates the thing that makes Nigerian SME lending
+impossible today: verified cashflow. Daily revenue, inventory turnover,
+receivables, and who actually pays on time. Most SME credit here dies on "no
+financials", and a shop with six months of Alaje history has financials. The
+assistant stays free or near free and the revenue is origination fees or a
+share of interest on working capital lent against the ledger. An order of
+magnitude per user above any subscription, and the incentives align: more usage
+means better data means better underwriting. This is also the market our own
+team already works in.
+
+**2. Restocking, which is already half built.** `check_stock` knows what is
+running low. The natural next message is "You are down to 3 cartons of Indomie.
+Order 20 from your supplier for 240,000?" Distributors pay for that placement,
+or we take margin. Highest revenue per user of the three, and it turns an
+existing feature into a business line.
+
+**3. Payments.** We already know Chika owes 22,000. "Send Chika a reminder with
+a payment link" is a small feature and a merchant fee on every collection. The
+caveat is that it drags toward payments licensing, so partner rather than
+build.
+
+### The moat is the ledger
+
+Six months of history makes switching genuinely painful, and unlike the
+assistant itself, that history cannot be copied by a competitor with the same
+model and the same API. **The product is the wedge; the data is the asset.**
+
+### The risk to name first
+
+Distribution. Nobody discovers a WhatsApp number organically. Realistically the
+route is through people who already hold shop networks: FMCG distributors,
+microfinance banks, POS agent networks. That is also a fourth revenue line,
+since those partners will pay for visibility into their own merchants.
+
+## 11. Running it
 
 ```bash
 npm install
@@ -255,7 +324,7 @@ check skipped".
 
 # Slide outline
 
-Twelve slides, roughly five minutes. Each has the point to make, what to show,
+Fourteen slides, roughly six minutes. Each has the point to make, what to show,
 and the line worth saying out loud.
 
 **1. Title**
@@ -310,12 +379,24 @@ The three bugs the 146 green tests missed.
 *Say:* "Our tests were green and the system was completely broken. Every tool
 call was failing. You only find that by running it for real."
 
-**11. Honest limits**
+**11. How this makes money**
+Free to start, 2,500 naira a month unlimited. Then the real line.
+*Say:* "The subscription is the wedge, not the business. A shop with six months
+of Alaje history is a shop a lender can finally underwrite, and that is the
+market our team already works in."
+
+**12. Why the economics work**
+One number on screen: under 1 naira per message.
+*Say:* "We route with a cheap model on purpose. On a premium model this shop
+costs us 15,000 a month and the subscription is underwater. The engineering
+choice is the business model."
+
+**13. Honest limits**
 Expenses, voice notes, receipt OCR, proactive alerts. Named as next, not hidden.
 *Say:* "Profit here is gross margin. We track what stock costs, not rent and
 diesel. That is the next tool, not a hard problem."
 
-**12. Close**
+**14. Close**
 Back to the chat window.
 *Say:* "If they can already use WhatsApp, they can already use this. That is
 the whole bet."
@@ -330,3 +411,8 @@ the whole bet."
   alerts and PDF export are not built.
 - **If a reply comes back wrong, use it.** Say "no, undo that" and let the undo
   do the work. A recovery is a better demo than a perfect run.
+- **Expect "how do you make money" and "how do you reach these shops".** Slide
+  11 answers the first. For the second: nobody finds a WhatsApp number on their
+  own, so distribution runs through people who already hold shop networks, which
+  means FMCG distributors, microfinance banks and POS agent networks. Naming
+  that risk first is stronger than being handed it.
