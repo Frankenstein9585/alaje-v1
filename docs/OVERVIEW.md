@@ -194,6 +194,37 @@ cost, or alert level.
   second row.
 - **Web dashboard, PDF reports, multiple phone numbers per business.**
 
+### Nigerian languages: partial, and handled carefully
+
+There is no translation layer. What exists is whatever the underlying model
+already knows, and we tested it rather than assuming.
+
+**Pidgin works well** and is the everyday register these users actually type in.
+"Abeg warn me when Indomie remain 15" and "wetin I make today" both route
+correctly.
+
+**Yoruba, Igbo and Hausa are partial.** Questions work: "Indomie melo ni o ku?"
+and "nawa na samu yau?" both returned the right answer. Recording is where it
+gets dangerous. An Igbo sale reading "carton Indomie ato", meaning three, was
+recorded as **one carton** with a confident reply and no error at all. That is
+the worst failure this system can have: the books are wrong and the owner has
+been told they are right.
+
+So the rule is asymmetric, and matches how everything else here is built.
+Looking things up in any language is free. **Recording something written in a
+language other than English or pidgin now requires the assistant to say back
+what it understood and get a yes first.** The Igbo case then shows its wrong
+reading of "1 carton" on screen, where the owner can correct it, rather than
+banking it silently.
+
+Replies stay in English. Generating Yoruba or Igbo from a model that clearly
+half understands them would put mangled text around the exact numbers the owner
+is checking, and that echo is the error catching mechanism.
+
+Proper support means either a model with real coverage of these languages, or a
+dedicated translation step in front of the loop, with the confirmation kept
+either way. Worth doing, not free.
+
 The last one is documented with its migration in `plans/phase-2.md` section 13.
 Today a phone number *is* a business, so an owner and an assistant on two
 handsets would be two separate shops.
@@ -395,6 +426,12 @@ choice is the business model."
 Expenses, voice notes, receipt OCR, proactive alerts. Named as next, not hidden.
 *Say:* "Profit here is gross margin. We track what stock costs, not rent and
 diesel. That is the next tool, not a hard problem."
+
+If asked about **native languages**: "Pidgin works today. We tested Yoruba, Igbo
+and Hausa: questions work, recording is not reliable yet. An Igbo message
+meaning three cartons came back as one, silently. So anything not in English or
+pidgin now has to be confirmed before we write it. We would rather ask one extra
+question than put a wrong number in someone's books."
 
 **14. Close**
 Back to the chat window.
