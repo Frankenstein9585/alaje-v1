@@ -1,4 +1,5 @@
 import type { Logger } from '../logger.js';
+import { toWhatsAppText } from './text.js';
 
 /** Outbound messaging port. Swapped for a spy in tests. */
 export interface WhatsAppSender {
@@ -49,7 +50,9 @@ export class CloudApiSender implements WhatsAppSender {
         recipient_type: 'individual',
         to,
         type: 'text',
-        text: { preview_url: false, body },
+        // WhatsApp is not markdown. Normalise here so every outbound path is
+        // covered, whatever produced the text.
+        text: { preview_url: false, body: toWhatsAppText(body) },
       }),
     });
 
