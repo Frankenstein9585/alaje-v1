@@ -262,72 +262,90 @@ review or by unit tests.** They needed a real model and real traffic.
 
 ## 10. How this makes money
 
-### The constraint that decides everything
+### The cost that decides everything
 
-A provisions shop nets somewhere around 150,000 to 900,000 naira a month.
-Realistic software tolerance is **1,000 to 5,000 naira a month**, and even that
-has to be collected without a card, since recurring card billing barely works
-in this market.
+**From 1 October 2026 Meta charges per message for service messages**, including
+replies sent inside the open 24 hour window. These have been free since November
+2024. Service messages get no volume discount: the rate is flat however many are
+sent. For Nigerian numbers the expected rate is about 0.0101 dollars, roughly 14
+naira per reply. Meta has not published the final October rate card, so confirm
+before committing to a price.
 
-The cost side is where the model choice already did business work. On DeepSeek
-at roughly 1,500 tokens in and 200 out, a message costs well under a naira, so
-a thousand messages a month lands around 900 naira. On a premium model the same
-shop costs 15,000 a month and the subscription is underwater before anything
-else is paid for.
+This only affects businesses on the WhatsApp Business Platform, which is what
+Alaje runs on. Shops using the ordinary WhatsApp Business app are unaffected.
 
-**Cheap model tool routing is not a corner cut, it is what makes the unit
-economics work at all.**
+The consequence is that **delivery, not inference, is now the dominant cost.**
 
-Meta helps too. User initiated service conversations are free, and the entire
-core loop is user initiated. Proactive alerts would move into paid template
-messages, which is a second reason that feature is not free to add. Meta
-pricing changes; verify before relying on it.
+| Replies per month | Delivery at 14 naira | Model | Total |
+| --- | --- | --- | --- |
+| 100 | 1,400 | under 100 | about 1,500 |
+| 300 | 4,200 | under 300 | about 4,500 |
+| 600 | 8,400 | under 600 | about 9,000 |
+| 1,000 | 14,000 | under 1,000 | about 15,000 |
 
-### The wedge: freemium at 2,500 naira a month
+Inference is roughly a fourteenth of delivery. Choosing a cheap routing model
+still matters, but it is no longer the lever that decides viability. **Reply
+count is.**
 
-Free tier capped at around 100 messages a month, enough for a shop to feel the
-value and not enough to run a business on. Paid is unlimited, plus invoices and
-reports.
+### What this kills
 
-This is the wedge, not the business. At 2,500 naira with perhaps 30 percent
-converting, it takes tens of thousands of shops to make real revenue, and SME
-churn in this market is punishing.
+A flat unlimited subscription at 2,500 naira. At 200 replies a month it breaks
+even; at 600 it loses 6,000 naira per shop per month, and the more a shop uses
+it the more money it loses. Unlimited is now a promise to lose money on your
+best customers.
 
-### The actual business
+### The pricing that follows
 
-**1. Lending.** Alaje generates the thing that makes Nigerian SME lending
-impossible today: verified cashflow. Daily revenue, inventory turnover,
-receivables, and who actually pays on time. Most SME credit here dies on "no
-financials", and a shop with six months of Alaje history has financials. The
-assistant stays free or near free and the revenue is origination fees or a
-share of interest on working capital lent against the ledger. An order of
-magnitude per user above any subscription, and the incentives align: more usage
-means better data means better underwriting. This is also the market our own
-team already works in.
+Price the thing that costs money. Tiers are counted in replies, not features.
 
-**2. Restocking, which is already half built.** `check_stock` knows what is
-running low. The natural next message is "You are down to 3 cartons of Indomie.
-Order 20 from your supplier for 240,000?" Distributors pay for that placement,
-or we take margin. Highest revenue per user of the three, and it turns an
-existing feature into a business line.
+| Tier | Price | Replies included | Delivery cost | Margin |
+| --- | --- | --- | --- | --- |
+| Free | 0 | 50 | 700 | acquisition |
+| Shop | 3,500 | 200 | 2,800 | 700 |
+| Busy | 8,500 | 500 | 7,000 | 1,500 |
 
-**3. Payments.** We already know Chika owes 22,000. "Send Chika a reminder with
-a payment link" is a small feature and a merchant fee on every collection. The
-caveat is that it drags toward payments licensing, so partner rather than
-build.
+Overage at 25 naira a reply. Everything above is in naira per month.
 
-### The moat is the ledger
+Margins are thin on purpose and the document should not pretend otherwise.
+**The subscription covers delivery. It is not the business.** Around 20 percent
+on a tier that a shop may not renew is not a company; it is a way to keep the
+assistant in front of a shop long enough for the ledger to become valuable.
 
-Six months of history makes switching genuinely painful, and unlike the
-assistant itself, that history cannot be copied by a competitor with the same
-model and the same API. **The product is the wedge; the data is the asset.**
+### Which makes the ledger the business, not a bonus
 
-### The risk to name first
+Section 10 previously called lending the upside. Under the new cost structure it
+is the actual revenue line. A shop with six months of Alaje history has the
+verified cashflow that Nigerian SME lending has never had: daily revenue,
+inventory turnover, receivables, and who pays on time. Origination fees or a
+share of interest on working capital are an order of magnitude per user above
+any subscription, and they are what allow the cheap tier to exist at all.
 
-Distribution. Nobody discovers a WhatsApp number organically. Realistically the
-route is through people who already hold shop networks: FMCG distributors,
-microfinance banks, POS agent networks. That is also a fourth revenue line,
-since those partners will pay for visibility into their own merchants.
+Restocking referrals sit in the same place: `check_stock` already knows what is
+running low, and a distributor will pay for that placement.
+
+### Two engineering levers, both also product improvements
+
+Reply count is now a cost, so reducing it is worth real money. Neither is built.
+
+**Consolidate rapid recording.** An owner logging ten sales in a row currently
+gets ten replies, costing 140 naira. One consolidated confirmation listing all
+ten costs 14. The echo has to survive, since it is how mistakes get caught, but
+it can be one message with ten lines instead of ten messages. This needs a short
+debounce in the handler and trades a little immediacy for a tenth of the cost.
+
+**Send the invoice as one message.** `send_invoice` currently sends the PDF with
+a caption and then the agent sends a text reply, so one invoice costs two
+messages while the caption already says everything. Fixing it properly means
+letting a tool hand an attachment back to the handler to send with the final
+reply, rather than sending it itself. Worth doing, not worth doing the night
+before a demo.
+
+### The competitive angle
+
+This change lands on every WhatsApp-based product in Nigeria on the same day.
+Teams who have not noticed will discover it in an October invoice with pricing
+already set. Knowing the number now, and having priced for it, is worth saying
+out loud.
 
 ## 11. Running it
 
