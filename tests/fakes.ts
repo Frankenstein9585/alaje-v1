@@ -88,6 +88,18 @@ export class InMemoryStore implements Store {
   }
 
   async createProduct(businessId: string, product: NewProduct): Promise<ProductRecord> {
+    // Mirrors DrizzleStore, which relies on the unique index: a second create
+    // for the same normalized name returns the existing row.
+    //
+    // The lookup is deliberately NOT awaited. Awaiting yields the event loop
+    // between the check and the insert, so two parallel calls both see "not
+    // found" and both insert — which is precisely the bug this guards against,
+    // and the fake would quietly stop reproducing it.
+    const normalized = normalizeProductName(product.name);
+    const already = this.products.find(
+      (p) => p.businessId === businessId && p.normalizedName === normalized,
+    );
+    if (already) return already;
     const row: ProductRecord = {
       id: randomUUID(),
       businessId,
@@ -141,6 +153,12 @@ export class InMemoryStore implements Store {
   }
 
   async createCustomer(businessId: string, name: string): Promise<CustomerRecord> {
+    // Same reasoning as createProduct: no await between check and insert.
+    const normalized = normalizeProductName(name);
+    const already = this.customers.find(
+      (c) => c.businessId === businessId && c.normalizedName === normalized,
+    );
+    if (already) return already;
     const row: CustomerRecord = {
       id: randomUUID(),
       businessId,

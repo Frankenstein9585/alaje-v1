@@ -195,3 +195,28 @@ describe('stock tools', () => {
     expect(store.toolCalls.every((c) => c.businessId === 'biz-1')).toBe(true);
   });
 });
+
+describe('concurrent creation', () => {
+  it('does not duplicate a product when two calls race for it', async () => {
+    // The agent loop runs a turn's tool calls in parallel. Two naming the same
+    // new product both see "not found" and both try to create it.
+    const store = new InMemoryStore();
+    const ctx: ToolContext = { business, store, logger: silentLogger };
+
+    await Promise.all([
+      executeTool(tools, ctx, {
+        id: 'a',
+        name: 'add_stock',
+        argumentsJson: JSON.stringify({ product: 'Indomie', quantity: 5 }),
+      }),
+      executeTool(tools, ctx, {
+        id: 'b',
+        name: 'add_stock',
+        argumentsJson: JSON.stringify({ product: 'Indomie', quantity: 7 }),
+      }),
+    ]);
+
+    expect(store.products).toHaveLength(1);
+    expect(store.products[0]?.stockQty).toBe(12);
+  });
+});

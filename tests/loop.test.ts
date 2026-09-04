@@ -165,18 +165,46 @@ describe('runAgent', () => {
     expect(reply).toBe(FALLBACK_REPLY);
   });
 
-  it('stops at the iteration cap without claiming success', async () => {
+  it('asks for a plain summary rather than giving up at the iteration cap', async () => {
     const { tool } = spyTool();
     const llm = new ScriptedLlmClient(
       toolResponse([{ name: 'record_thing', args: { amount: 1 } }]),
       toolResponse([{ name: 'record_thing', args: { amount: 2 } }]),
       toolResponse([{ name: 'record_thing', args: { amount: 3 } }]),
+      textResponse('Recorded all three.'),
     );
 
     const reply = await runAgent(deps(llm, [tool]), business, textMessage({ text: 'loop' }));
 
+    // The work is already done; dropping it for a generic apology wastes it.
+    expect(reply).toBe('Recorded all three.');
+    expect(llm.requests).toHaveLength(4);
+    // The last call offers no tools, so the model has to answer in words.
+    expect(llm.requests[3]?.tools).toEqual([]);
+  });
+
+  it('falls back when even the summary call cannot produce words', async () => {
+    const { tool } = spyTool();
+    const llm = new ScriptedLlmClient(
+      toolResponse([{ name: 'record_thing', args: { amount: 1 } }]),
+      toolResponse([{ name: 'record_thing', args: { amount: 2 } }]),
+      toolResponse([{ name: 'record_thing', args: { amount: 3 } }]),
+      new LlmError('gateway down', { retryable: false }),
+    );
+
+    const reply = await runAgent(deps(llm, [tool]), business, textMessage({ text: 'loop' }));
     expect(reply).toBe(FALLBACK_REPLY);
-    expect(llm.requests).toHaveLength(3);
+  });
+
+  it('uses a truncated reply rather than apologising', async () => {
+    // Hitting max_tokens mid-sentence still leaves the owner the numbers.
+    const llm = new ScriptedLlmClient({
+      text: 'Sold 3 cartons for ₦42,000. 17 cart',
+      toolCalls: [],
+      stopReason: 'max_tokens',
+    });
+    const reply = await runAgent(deps(llm), business, textMessage({ text: 'x' }));
+    expect(reply).toBe('Sold 3 cartons for ₦42,000. 17 cart');
   });
 
   it('never replies with silence', async () => {

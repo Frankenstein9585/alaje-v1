@@ -16,7 +16,7 @@ const schema = z.object({
   LLM_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
   LLM_MODEL: z.string().min(1),
   LLM_API_KEY: z.string().min(1),
-  LLM_MAX_TOKENS: z.coerce.number().int().positive().default(2048),
+  LLM_MAX_TOKENS: z.coerce.number().int().positive().default(4096),
   // Low but not zero: bookkeeping wants repeatable tool arguments, and a few
   // gateways behave oddly at exactly 0.
   LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.2),

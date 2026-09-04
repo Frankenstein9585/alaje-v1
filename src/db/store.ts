@@ -135,6 +135,15 @@ export class DrizzleStore implements Store {
       .orderBy(products.name);
   }
 
+  /**
+   * Create, or return what is already there.
+   *
+   * The tools check-then-create, and the agent loop runs a turn's tool calls in
+   * parallel — so two calls naming the same new product both see "not found"
+   * and both insert. Two webhook deliveries landing together do the same. The
+   * unique index is what makes that safe; catching its error and re-reading is
+   * what makes it invisible.
+   */
   async createProduct(businessId: string, product: NewProduct): Promise<ProductRecord> {
     const row: ProductRecord = {
       id: randomUUID(),
@@ -146,8 +155,15 @@ export class DrizzleStore implements Store {
       stockQty: product.stockQty ?? 0,
       lowStockThreshold: product.lowStockThreshold ?? 0,
     };
-    await this.db.insert(products).values(row);
-    return row;
+    try {
+      await this.db.insert(products).values(row);
+      return row;
+    } catch (err) {
+      if (!isDuplicateKeyError(err)) throw err;
+      const existing = await this.findProductByName(businessId, product.name);
+      if (!existing) throw err; // lost the race to something else entirely
+      return existing;
+    }
   }
 
   async adjustStock(
@@ -193,6 +209,7 @@ export class DrizzleStore implements Store {
       .orderBy(customers.name);
   }
 
+  /** Same race as createProduct: parallel tool calls naming one new customer. */
   async createCustomer(businessId: string, name: string): Promise<CustomerRecord> {
     const row: CustomerRecord = {
       id: randomUUID(),
@@ -200,8 +217,15 @@ export class DrizzleStore implements Store {
       name: name.trim(),
       normalizedName: normalizeProductName(name),
     };
-    await this.db.insert(customers).values(row);
-    return row;
+    try {
+      await this.db.insert(customers).values(row);
+      return row;
+    } catch (err) {
+      if (!isDuplicateKeyError(err)) throw err;
+      const existing = await this.findCustomerByName(businessId, name);
+      if (!existing) throw err;
+      return existing;
+    }
   }
 
   /**

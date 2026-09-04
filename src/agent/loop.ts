@@ -63,11 +63,14 @@ export async function runAgent(
 
     if (response.stopReason !== 'tool_use' || response.toolCalls.length === 0) {
       const text = response.text?.trim();
+      // A truncated reply is still better than an apology: the owner gets the
+      // numbers, just possibly mid-sentence.
       if (text) return text;
 
-      // Empty final turn. Rare, but silence is not an acceptable reply.
+      // No text at all. Seen in the wild when the model spends the whole
+      // budget on a malformed tool call and gets cut off mid-token.
       deps.logger.warn(
-        { businessId: business.id, stopReason: response.stopReason },
+        { businessId: business.id, stopReason: response.stopReason, iteration },
         'model returned no text',
       );
       return FALLBACK_REPLY;
@@ -97,11 +100,22 @@ export async function runAgent(
     }
   }
 
-  // Ran out of iterations mid-conversation. Something was attempted and we
-  // cannot describe the outcome honestly, so do not try.
+  // Out of iterations with tool results in hand but no reply written. Rather
+  // than dropping all that work on the floor and sending a generic apology,
+  // ask once more with no tools available: the model cannot call anything, so
+  // it has to answer in words. Everything it needs is already in `messages`.
   deps.logger.warn(
     { businessId: business.id, waMessageId: message.waMessageId, cap: deps.maxIterations },
-    'agent hit iteration cap',
+    'agent hit iteration cap, asking for a plain summary',
   );
+
+  try {
+    const summary = await deps.llm.complete({ system, messages, tools: [] });
+    const text = summary.text?.trim();
+    if (text) return text;
+  } catch (err) {
+    deps.logger.error({ err, businessId: business.id }, 'summary call failed after cap');
+  }
+
   return FALLBACK_REPLY;
 }
