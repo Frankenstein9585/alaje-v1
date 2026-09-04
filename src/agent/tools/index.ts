@@ -1,3 +1,4 @@
+import { renameBusinessTool } from './business.js';
 import { checkBalanceTool, recordPaymentTool } from './customers.js';
 import { sendInvoiceTool } from './invoice.js';
 import { runReportTool } from './report.js';
@@ -18,4 +19,5 @@ export const allTools: AnyToolDefinition[] = [
   undoLastTool,
   runReportTool,
   sendInvoiceTool,
+  renameBusinessTool,
 ];

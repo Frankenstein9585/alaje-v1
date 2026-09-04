@@ -35,6 +35,7 @@ const business: BusinessRecord = {
  * nothing about the real input.
  */
 const script: Array<{ say: string; expect: string }> = [
+  { say: 'oya my shop na Mama Chika Ventures not Stores', expect: 'rename_business' },
   { say: 'i got 20 cartons of indomie', expect: 'add_stock' },
   { say: 'sold 3 to chika for 42k', expect: 'record_sale (customer Chika, amount 42000)' },
   { say: 'how much indomie remain?', expect: 'check_stock' },
