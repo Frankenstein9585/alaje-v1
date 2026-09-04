@@ -103,10 +103,20 @@ export const addStockTool: ToolDefinition<z.infer<typeof addStockArgs>> = {
       costPrice: args.unit_cost === undefined ? null : args.unit_cost.toFixed(2),
     });
 
-    // Restocking at a new price updates the cost going forward. Sales already
-    // recorded keep the cost they were sold at.
-    if (args.unit_cost !== undefined && !created) {
-      await ctx.store.setProductCost(ctx.business.id, product.id, args.unit_cost.toFixed(2));
+    // Details given while restocking apply to the existing row too. Previously
+    // only cost updated, so "warn me when Indomie drops below 5" on a product
+    // that already existed silently did nothing.
+    //
+    // Restocking at a new price changes the cost going forward only; sales
+    // already recorded keep the cost they were sold at.
+    if (!created) {
+      await ctx.store.updateProduct(ctx.business.id, product.id, {
+        ...(args.unit !== undefined ? { unit: args.unit } : {}),
+        ...(args.low_stock_threshold !== undefined
+          ? { lowStockThreshold: args.low_stock_threshold }
+          : {}),
+        ...(args.unit_cost !== undefined ? { costPrice: args.unit_cost.toFixed(2) } : {}),
+      });
     }
 
     const updated = (await ctx.store.adjustStock(ctx.business.id, product.id, args.quantity)) ?? product;

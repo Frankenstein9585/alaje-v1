@@ -8,6 +8,7 @@ import type {
   CustomerRecord,
   NewProduct,
   NewTransaction,
+  ProductPatch,
   ProductRecord,
   Store,
   ToolCallLogEntry,
@@ -276,15 +277,24 @@ export class DrizzleStore implements Store {
     }));
   }
 
-  async setProductCost(
+  async updateProduct(
     businessId: string,
     productId: string,
-    costPrice: string,
+    patch: ProductPatch,
   ): Promise<ProductRecord | null> {
-    await this.db
-      .update(products)
-      .set({ costPrice })
-      .where(and(eq(products.id, productId), eq(products.businessId, businessId)));
+    // Only write what was actually supplied. Spreading undefined would clear a
+    // unit or a cost the owner never mentioned.
+    const set: Record<string, unknown> = {};
+    if (patch.unit !== undefined) set.unit = patch.unit;
+    if (patch.costPrice !== undefined) set.costPrice = patch.costPrice;
+    if (patch.lowStockThreshold !== undefined) set.lowStockThreshold = patch.lowStockThreshold;
+
+    if (Object.keys(set).length > 0) {
+      await this.db
+        .update(products)
+        .set(set)
+        .where(and(eq(products.id, productId), eq(products.businessId, businessId)));
+    }
 
     const rows = await this.db
       .select()

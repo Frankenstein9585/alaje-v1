@@ -3,7 +3,7 @@ import { checkBalanceTool, recordPaymentTool } from '../src/agent/tools/customer
 import { sendInvoiceTool } from '../src/agent/tools/invoice.js';
 import { executeTool, type ToolContext } from '../src/agent/tools/registry.js';
 import { runReportTool } from '../src/agent/tools/report.js';
-import { setCostPriceTool } from '../src/agent/tools/cost.js';
+import { updateProductTool } from '../src/agent/tools/product.js';
 import { addStockTool, recordSaleTool } from '../src/agent/tools/stock.js';
 import { undoLastTool } from '../src/agent/tools/undo.js';
 import { periodRange } from '../src/period.js';
@@ -25,7 +25,7 @@ const tools = [
   undoLastTool,
   runReportTool,
   sendInvoiceTool,
-  setCostPriceTool,
+  updateProductTool,
 ];
 
 describe('periodRange', () => {
@@ -128,7 +128,7 @@ describe('run_report and send_invoice', () => {
 
     it('picks up a cost given after the fact, for sales from then on', async () => {
       await call('add_stock', { product: 'Milo', quantity: 10, unit: 'tin' });
-      const set = await call('set_cost_price', { product: 'Milo', unit_cost: 1500 });
+      const set = await call('update_product', { product: 'Milo', unit_cost: 1500 });
       expect(display(set)).toContain('costs you ₦1,500 per tin');
 
       await call('record_sale', { product: 'Milo', quantity: 2, amount: 5000 });
@@ -138,7 +138,7 @@ describe('run_report and send_invoice', () => {
     });
 
     it('will not set a cost for a product it has never seen', async () => {
-      const out = await call('set_cost_price', { product: 'Garri', unit_cost: 900 });
+      const out = await call('update_product', { product: 'Garri', unit_cost: 900 });
       expect(out.isError).toBe(false);
       expect(display(out)).toContain('No record of Garri yet');
     });

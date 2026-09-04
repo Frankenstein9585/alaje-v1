@@ -8,6 +8,7 @@ import type {
   CustomerRecord,
   NewProduct,
   NewTransaction,
+  ProductPatch,
   ProductRecord,
   Store,
   ToolCallLogEntry,
@@ -125,14 +126,16 @@ export class InMemoryStore implements Store {
     return row;
   }
 
-  async setProductCost(
+  async updateProduct(
     businessId: string,
     productId: string,
-    costPrice: string,
+    patch: ProductPatch,
   ): Promise<ProductRecord | null> {
     const row = this.products.find((p) => p.id === productId && p.businessId === businessId);
     if (!row) return null;
-    row.costPrice = costPrice;
+    if (patch.unit !== undefined) row.unit = patch.unit;
+    if (patch.costPrice !== undefined) row.costPrice = patch.costPrice;
+    if (patch.lowStockThreshold !== undefined) row.lowStockThreshold = patch.lowStockThreshold;
     return row;
   }
 

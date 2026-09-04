@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { updateProductTool } from '../src/agent/tools/product.js';
 import { addStockTool, checkStockTool, recordSaleTool } from '../src/agent/tools/stock.js';
 import { executeTool, type ToolContext } from '../src/agent/tools/registry.js';
 import type { BusinessRecord } from '../src/store.js';
@@ -236,5 +237,84 @@ describe('concurrent creation', () => {
 
     expect(store.products).toHaveLength(1);
     expect(store.products[0]?.stockQty).toBe(12);
+  });
+});
+
+describe('changing product details after creation', () => {
+  let store: InMemoryStore;
+  let ctx: ToolContext;
+  const all = [...tools, updateProductTool];
+  const call = (name: string, args: unknown) =>
+    executeTool(all, ctx, { id: 'c1', name, argumentsJson: JSON.stringify(args) });
+  const display = (out: { value?: unknown }) => (out.value as { display: string }).display;
+
+  beforeEach(async () => {
+    store = new InMemoryStore();
+    ctx = { business, store, logger: silentLogger };
+    await call('add_stock', { product: 'Indomie', quantity: 20, unit: 'carton' });
+  });
+
+  it('sets a low stock alert on a product that already exists', async () => {
+    // This silently did nothing before: only cost updated on an existing row.
+    const out = await call('update_product', { product: 'Indomie', low_stock_alert: 5 });
+
+    expect(store.products[0]?.lowStockThreshold).toBe(5);
+    expect(display(out)).toContain('warn at 5 cartons');
+  });
+
+  it('warns at the new threshold on the very next sale', async () => {
+    await call('update_product', { product: 'Indomie', low_stock_alert: 18 });
+    const out = await call('record_sale', { product: 'Indomie', quantity: 3, amount: 42000 });
+
+    expect(display(out)).toContain("That's low.");
+  });
+
+  it('corrects a wrongly guessed unit', async () => {
+    await call('update_product', { product: 'Indomie', unit: 'bag' });
+    const out = await call('check_stock', { product: 'Indomie' });
+
+    expect(display(out)).toBe('Indomie: 20 bags left.');
+  });
+
+  it('updates unit and threshold given during a restock, not just cost', async () => {
+    await call('add_stock', {
+      product: 'Indomie',
+      quantity: 5,
+      unit: 'bag',
+      low_stock_threshold: 4,
+      unit_cost: 9000,
+    });
+
+    expect(store.products[0]).toMatchObject({
+      unit: 'bag',
+      lowStockThreshold: 4,
+      costPrice: '9000.00',
+      stockQty: 25,
+    });
+  });
+
+  it('leaves unmentioned details alone', async () => {
+    await call('update_product', { product: 'Indomie', unit_cost: 12000 });
+    await call('update_product', { product: 'Indomie', low_stock_alert: 3 });
+
+    // Setting the alert must not wipe the cost set a moment earlier.
+    expect(store.products[0]).toMatchObject({
+      costPrice: '12000.00',
+      lowStockThreshold: 3,
+      unit: 'carton',
+    });
+  });
+
+  it('turns the warning off with zero', async () => {
+    await call('update_product', { product: 'Indomie', low_stock_alert: 5 });
+    const out = await call('update_product', { product: 'Indomie', low_stock_alert: 0 });
+
+    expect(store.products[0]?.lowStockThreshold).toBe(0);
+    expect(display(out)).toContain('no low stock warnings');
+  });
+
+  it('asks what to change when given nothing to change', async () => {
+    const out = await call('update_product', { product: 'Indomie' });
+    expect(display(out)).toContain('What would you like to change');
   });
 });

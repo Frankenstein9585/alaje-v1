@@ -53,6 +53,7 @@ const script: Array<{ say: string; expect: string }> = [
   },
   { say: 'sold 3 to chika for 42k', expect: 'record_sale (customer Chika, amount 42000)' },
   { say: 'how much indomie remain?', expect: 'check_stock' },
+  { say: 'abeg warn me when indomie remain 15', expect: 'update_product (low_stock_alert 15)' },
   { say: 'chika don pay 20k', expect: 'record_payment (20000)' },
   { say: 'who dey owe me?', expect: 'check_balance' },
   { say: 'wetin i make today?', expect: 'run_report (today, real profit)' },

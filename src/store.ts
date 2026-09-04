@@ -55,6 +55,12 @@ export interface TransactionRecord {
   createdAt: Date;
 }
 
+export interface ProductPatch {
+  unit?: string | null;
+  costPrice?: string | null;
+  lowStockThreshold?: number;
+}
+
 export interface NewProduct {
   name: string;
   unit?: string | null;
@@ -129,8 +135,15 @@ export interface Store {
    * arrive concurrently and a lost update silently corrupts the count.
    */
   adjustStock(businessId: string, productId: string, delta: number): Promise<ProductRecord | null>;
-  /** Set what one unit costs the shop. */
-  setProductCost(businessId: string, productId: string, costPrice: string): Promise<ProductRecord | null>;
+  /**
+   * Change details of an existing product. Only the keys present are written,
+   * so an unmentioned field keeps its value rather than being cleared.
+   */
+  updateProduct(
+    businessId: string,
+    productId: string,
+    patch: ProductPatch,
+  ): Promise<ProductRecord | null>;
 
   // --- customers ---
 
